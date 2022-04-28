@@ -42,7 +42,9 @@ class Tshark(object):
 
     def __init__(self):
         """ Sets the path to tshark.  Try all the possible paths in _config_paths"""
-        self._command = ["/usr/local/bin/tshark"]
+        tshark_path = subprocess.run(['which', 'tshark'], check=True, capture_output=True, text=True).stdout
+
+        self._command = [tshark_path.strip()]
 
     def capture(self, command):
         """ Generator to do packet capture.

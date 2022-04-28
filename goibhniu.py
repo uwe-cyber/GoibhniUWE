@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import docker
 import subprocess
 import espcap.espcap as espcap
@@ -17,7 +18,7 @@ def traffic_monitor_setup(api_client):
 
     ipv4_addresses = ["172.18.0.10","172.18.0.11"]
 
-    env_args = ["discovery.type=single-node",""]
+    env_args = ["discovery.type=single-node","None"]
 
     for i in range(0, len(image_list)):
         image = image_list[i]
@@ -27,6 +28,9 @@ def traffic_monitor_setup(api_client):
         container = docker_client.containers.create(image, detach=True, name=container_name, environment=[env_args[i]])
         docker_client.networks.get("uwe_tek").connect(container, ipv4_address=ip_addr)
         container.start()
+    
+    # Wait for container(s) to come online    
+    time.sleep(30)
 
 # Add in clean container shutdown on keyboard interrupt
 def traffic_creation_setup():
@@ -36,7 +40,7 @@ def traffic_creation_setup():
     ipv4_addresses = ["172.18.0.20", "172.18.0.21"]
 
     for i in range(0, len(container_names)):
-        subprocess.Popen(['gnome-terminal', '-x', 'bash', '-c', 'docker run -it --rm --net uwe_tek --ip {} uwe_battleships:{}'.format(ipv4_addresses[i],container_names[i])], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+        subprocess.Popen(['gnome-terminal', '-x', 'bash', '-c', 'docker run -it --rm --name {} --net uwe_tek --ip {} uwe_battleships:{}'.format(container_names[i],ipv4_addresses[i],container_names[i])], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
 
 def network_create(api_client,network_subnets):
 
@@ -77,8 +81,9 @@ if not uwe_tek_exists:
     network_create(api_client,network_subnets)
 
 #TODO - Add check for elasticsearch / kibana containers
-#traffic_monitor_setup(api_client)
+traffic_monitor_setup(api_client)
 
 traffic_creation_setup()
 
-espcap.main("172.18.0.10:9200","any","src net 172.18.0.0/24 and host not 172.18.0.10 and host not 172.18.0.11",100,0)
+# Make chunk sizing dynamic / changeable on the fly
+espcap.main("172.18.0.10:9200","any","src net 172.18.0.0/24 and host not 172.18.0.10 and host not 172.18.0.11",50,0)
