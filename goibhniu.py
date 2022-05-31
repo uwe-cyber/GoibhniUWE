@@ -141,8 +141,7 @@ def httpd_setup():
     
     return "httpd:2.4 is up and running on 172.18.0.13"
     
-
-# Add in clean container shutdown on keyboard interrupt
+    
 def traffic_creation_setup():
 
     container_names = ["blue_team", "red_team"]
@@ -163,7 +162,6 @@ def traffic_creation_setup():
                 container_status = container_check(container_names[i])
 
     # issues with trying to do both in the same loop due to C2 dependencies for containers
-
     for i in range(0, len(container_names)):
 
         subprocess.Popen(['gnome-terminal', '-x', 'bash', '-c', 'docker run -it --rm --name {} --net uwe_tek --ip {} uwe_battleships:{}'.format(container_names[i],ipv4_addresses[i],container_names[i])], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
@@ -216,7 +214,7 @@ def sub_network_check():
 
     return
 
-        
+# Add in clean container shutdown on keyboard interrupt ...?        
 if __name__ == '__main__':
 
     running_container_info = ""
