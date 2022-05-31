@@ -38,6 +38,8 @@ from .indexer import index_packets, dump_packets
 
 logging.getLogger("elasticsearch").setLevel(logging.CRITICAL)
 
+containers = []
+
 def packet_template(version, node):
 
     if version == 7:
@@ -190,8 +192,10 @@ def init_file_capture(es, tshark, pcap_files, chunk):
         sys.ext(1)
 
 
-def main(node, nic, bpf, chunk,count):
+def main(node, nic, bpf, chunk,count,containers):
     try:
+        containers = containers
+        
         tshark = Tshark()
         tshark.set_interrupt_handler()
 
@@ -200,14 +204,21 @@ def main(node, nic, bpf, chunk,count):
             es = Elasticsearch(node)
 
             print("Testing elasticsearch connection")
-            if es.ping():
-                print("Ping success")
-                cluster_info = es.info()
-                cluster_info["version"]["number"]
 
-                packet_template(int(cluster_info["version"]["number"].split(".")[0]), node)
+            ping_success = False
 
-            else:
+            for _ in range(0,5):
+
+                if es.ping():
+                    print("Ping success")
+                    cluster_info = es.info()
+                    cluster_info["version"]["number"]
+
+                    packet_template(int(cluster_info["version"]["number"].split(".")[0]), node)
+                    ping_success = True
+                    break
+
+            if not ping_success:
                 print("Unable to ping elasticsearch instance on {}\nPlease check and try again".format(node))
                 sys.exit(1)
 

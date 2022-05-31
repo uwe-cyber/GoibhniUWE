@@ -1,0 +1,19 @@
+filebeat.config:
+  modules:
+    path: ${path.config}/modules.d/*.yml
+    reload.enabled: false
+
+filebeat.autodiscover:
+  providers:
+    - type: docker
+      hints.enabled: true
+
+processors:
+  - drop_event.when.contains.container.image.name: kibana
+  - drop_event.when.contains.container.image.name: elasticsearch
+  - drop_event.when.contains.container.image.name: filebeat
+
+output.elasticsearch:
+  hosts: '172.18.0.10:9200'
+  #username: 'elastic'
+  #password: 'tphOuNomrXQUXbb9C=XS'

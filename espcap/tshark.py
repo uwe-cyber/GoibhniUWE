@@ -17,11 +17,11 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 """
 
-
 import os
 import sys
 import yaml
 import json
+import docker
 import signal
 import binascii
 import subprocess
@@ -29,11 +29,20 @@ import subprocess
 closing = False
 
 def _exit_gracefully(signum, frame):
+    from .espcap import containers as container_names
+
+    docker_client = docker.DockerClient(base_url='unix://var/run/docker.sock')
+
     """ Sets global closing flag.
 
     :param signum: Signal type
     :param frame:
     """
+    for name in container_names:
+        container = docker_client.get(name)
+        container.stop()
+        container.remove()
+
     global closing
     closing = True
 
