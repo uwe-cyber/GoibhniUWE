@@ -71,7 +71,10 @@ class Tshark(object):
                     try:
                         json_packet = json.loads(packet)
                         hexvalue = json_packet["layers"]["tcp"]["tcp_tcp_payload"].replace(":","")
-                        plaintext = bytearray.fromhex(hexvalue).decode()
+                        try:
+                            plaintext = bytearray.fromhex(hexvalue).decode()
+                        except UnicodeDecodeError:
+                            yield json.loads(packet)
                         json_packet["layers"]["tcp"]["tcp_tcp_payload"] = plaintext
                         yield json_packet
                     except KeyError:

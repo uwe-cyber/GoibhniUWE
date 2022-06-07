@@ -10,6 +10,7 @@ import subprocess
 import espcap.espcap as espcap
 
 from io import BytesIO
+from mysql.connector import connect, Error
 
 
 docker_client = docker.DockerClient(base_url='unix://var/run/docker.sock')
@@ -49,51 +50,70 @@ def container_check(container_name, status_to_check=None):
 
     return
 
-def traffic_monitor_setup():
 
-    image_list = ["elasticsearch:7.17.2","kibana:7.17.2"]
+def service_check(address):
 
-    ipv4_addresses = ["172.18.0.10","172.18.0.11"]
+    # Check the service status - Container may be running while microservice is still setting up
+    response_status = 404
 
-    ports = [9200,5601]
-
-    env_args = ["discovery.type=single-node","None"]
-
-    temp_str = ""
-
-    for i in range(0, len(image_list)):
-        image = image_list[i]
-        container_name = image.split(":")[0]
-        ip_addr = ipv4_addresses[i]
-        port = ports[i]
-
-        if container_check(container_name) != "running":
-
-            local_docker_check(image)
-
-            container = docker_client.containers.create(image, detach=True, name=container_name, environment=[env_args[i]])
-            docker_client.networks.get("uwe_tek").connect(container, ipv4_address=ip_addr)
-            container.start()
-            containers.append(container_name)
-        
-            # Wait for container(s) to come online   
-            container_check(container_name, "running")
-
-        temp_str += "\n{} is up and running on {} and can be accessed on {}:{}\n".format(container_name,ip_addr,ip_addr,port)
-    
-    # Check kibana status - We can use last assigned items as kibana is last in our loop ^
-    kibana_status = 404
-
-    while kibana_status != 200:
+    while response_status != 200:
         try:
-            response = requests.get("http://{}:{}/status".format(ip_addr,port))
-        # If kibana is "running" but not yet setup we get a connection error
+            response = requests.get(address)
+        # If container/ service is "running" but not yet setup we get a connection error
         except:
             continue
 
-        kibana_status = response.status_code
+        response_status = response.status_code
+
+    return 
+
+
+def elastic_setup():
+
+    if container_check("elasticsearch") != "running":
+
+        local_docker_check("elasticsearch:7.17.2")
+
+        elastic_container = docker_client.containers.create("elasticsearch:7.17.2",
+        detach=True, 
+        name="elasticsearch", 
+        environment=["discovery.type=single-node"])
+
+        docker_client.networks.get("uwe_tek").connect(elastic_container, 
+        ipv4_address="172.18.0.10")
+
+        elastic_container.start()
+        containers.append("elasticsearch")
+    
+        # Wait for container(s) to come online   
+        container_check("elasticsearch", "running")
+
+    service_check("http://172.18.0.10:9200")
         
-    return temp_str
+    return "elasticsearch:7.17.2 is up and running and can be accessed on 172.18.0.10:9200\n"
+
+def kibana_setup():
+
+    if container_check("kibana") != "running":
+
+        local_docker_check("kibana:7.17.2")
+
+        kibana_container = docker_client.containers.create("kibana:7.17.2", 
+        detach=True, 
+        name="kibana")
+
+        docker_client.networks.get("uwe_tek").connect(kibana_container, 
+        ipv4_address="172.18.0.11")
+
+        kibana_container.start()
+        containers.append("kibana")
+    
+        # Wait for container(s) to come online   
+        container_check("kibana", "running")
+    
+    service_check("http://172.18.0.11:5601/status")
+        
+    return "kibana:7.17.2 is up and running and can be accessed on 172.18.0.11:5601\n"
 
 
 def log_monitor_setup():
@@ -112,9 +132,12 @@ def log_monitor_setup():
         name="filebeat", 
         user="root", 
         environment=["output.elasticsearch.hosts=['172.18.0.10:9200']"],
-        volumes=['{}/resource_files/configs/filebeat.docker.yml:/usr/share/filebeat/filebeat.yml:ro'.format(dir_path), '/var/lib/docker/containers:/var/lib/docker/containers:ro', "/var/run/docker.sock:/var/run/docker.sock:ro"],
+        volumes=['{}/resource_files/Configs/filebeat.docker.yml:/usr/share/filebeat/filebeat.yml:ro'.format(dir_path), '/var/lib/docker/containers:/var/lib/docker/containers:ro', "/var/run/docker.sock:/var/run/docker.sock:ro"],
         command="-strict.perms=false")
-        docker_client.networks.get("uwe_tek").connect(filebeat_container, ipv4_address="172.18.0.12")
+        
+        docker_client.networks.get("uwe_tek").connect(filebeat_container, 
+        ipv4_address="172.18.0.12")
+
         filebeat_container.start()
 
         containers.append("filebeat")
@@ -131,17 +154,121 @@ def httpd_setup():
         httpd_container = docker_client.containers.create("httpd:2.4", 
         detach=True, 
         name="httpd", 
-        volumes=['{}/resource_files/configs/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro'.format(dir_path), '{}/resource_files/htdocs:/usr/local/apache2/htdocs/'.format(dir_path)])
-        docker_client.networks.get("uwe_tek").connect(httpd_container, ipv4_address="172.18.0.13")
+        volumes=['{}/resource_files/Configs/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro'.format(dir_path), '{}/resource_files/htdocs:/usr/local/apache2/htdocs/'.format(dir_path)])
+
+        docker_client.networks.get("uwe_tek").connect(httpd_container, 
+        ipv4_address="172.18.0.13")
+        
         httpd_container.start()
 
         container_check("httpd", "running")
 
         containers.append("httpd")
     
-    return "httpd:2.4 is up and running on 172.18.0.13"
+    return "httpd:2.4 is up and running on 172.18.0.13\n"
+
+
+def mysql_setup():
+
+    if container_check("mysql") != "running":
+
+        local_docker_check("uwe_mysql:101")
+
+        mysql_container = docker_client.containers.create("uwe_mysql:101", 
+        detach=True, 
+        name="mysql")
+
+        docker_client.networks.get("uwe_tek").connect("mysql", 
+        ipv4_address="172.18.0.14")
+
+        mysql_container.start()
+
+        container_check("mysql", "running")
+
+        containers.append("mysql")
+
+        # As with kibana we have a difference between the container running and the microservice
+        # Test connection with known bad creds until we get the expected error
+        no_connection = True
+
+        print("Waiting for MySQL to come online - This may take several minutes")
+
+        while no_connection:
+            time.sleep(5)
+            try:
+                with connect(
+                    host="172.18.0.14",
+                    user="test",
+                    password="ing",
+                ) as connection:
+                    break
+            except Error as e:
+                if "Access denied for user" in str(e):
+                    no_connection = False
     
+    print("MySQL is online")
+
+    return 
+
+
+def phpmyadmin_setup():
+
+    if container_check("phpmyadmin") != "running":
+
+        local_docker_check("phpmyadmin:5.2.0")
+
+        mysql_container = docker_client.containers.create("phpmyadmin:5.2.0", 
+        detach=True, 
+        name="phpmyadmin",
+        environment=["PMA_HOST=172.18.0.14"])
+
+        docker_client.networks.get("uwe_tek").connect("phpmyadmin", 
+        ipv4_address="172.18.0.15")
+
+        mysql_container.start()
+
+        container_check("phpmyadmin", "running")
+
+        containers.append("phpmyadmin")
+
+        # As with kibana we have a difference between the container running and the microservice
+        # Test connection with known bad creds until we get the expected error
+        no_connection = True
+
+        service_check("http://172.18.0.15")
     
+    return "phpmyadmin:5.2.0 is up and running on 172.18.0.15\n"
+    
+
+def joomla_setup():
+
+    if container_check("joomla") != "running":
+
+        local_docker_check("uwe_joomla:101")
+
+        mysql_container = docker_client.containers.create("uwe_joomla:101", 
+        detach=True, 
+        name="joomla",
+        environment=["JOOMLA_DB_HOST=172.18.0.14:3306"])
+
+        docker_client.networks.get("uwe_tek").connect("joomla", 
+        ipv4_address="172.18.0.16")
+
+        mysql_container.start()
+
+        container_check("joomla", "running")
+
+        containers.append("joomla")
+
+        # As with kibana we have a difference between the container running and the microservice
+        # Test connection with known bad creds until we get the expected error
+        no_connection = True
+
+        service_check("http://172.18.0.16")
+    
+    return "uwe_joomla:101 is up and running on 172.18.0.16\n"
+
+
 def traffic_creation_setup():
 
     container_names = ["blue_team", "red_team"]
@@ -217,14 +344,20 @@ def sub_network_check():
 # Add in clean container shutdown on keyboard interrupt ...?        
 if __name__ == '__main__':
 
-    running_container_info = ""
+    running_container_info = "\n"
 
     if os.geteuid() != 0:
         exit("This script needs elevated privileges.\nPlease try again, this time using 'sudo'. Exiting.")
 
     sub_network_check()
 
-    running_container_info += traffic_monitor_setup()
+    # Done first to avoid polluting the logs with mysql test connections
+    mysql_setup()
+
+    running_container_info += phpmyadmin_setup()
+    running_container_info += joomla_setup()
+    running_container_info += elastic_setup()
+    running_container_info += kibana_setup()
 
     log_monitor_setup()
 
