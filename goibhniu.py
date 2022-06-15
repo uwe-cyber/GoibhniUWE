@@ -6,6 +6,7 @@ import json
 import docker
 import signal
 import requests
+import psycopg2
 import subprocess
 import espcap.espcap as espcap
 
@@ -269,6 +270,77 @@ def joomla_setup():
     return "uwe_joomla:101 is up and running on 172.18.0.16\n"
 
 
+def postgres_setup():
+
+    if container_check("postgres") != "running":
+
+        local_docker_check("uwe_postgres:101")
+
+        postgres_container = docker_client.containers.create("uwe_postgres:101", 
+        detach=True, 
+        name="postgres")
+
+        docker_client.networks.get("uwe_tek").connect("postgres", 
+        ipv4_address="172.18.0.17")
+
+        postgres_container.start()
+
+        container_check("postgres", "running")
+
+        containers.append("postgres")
+
+        # As with kibana we have a difference between the container running and the microservice
+        # Test connection with known bad creds until we get the expected error
+        no_connection = True
+
+        while no_connection:
+            time.sleep(2)
+            
+            try:
+                conn = psycopg2.connect(
+                        host="172.18.0.17",
+                        database="test",
+                        user="test",
+                        password="ing")
+            except Exception as e:
+                if "authentication failed" in str(e):
+                    no_connection = False
+
+    return "uwe_postgres:101 is up and running on 172.18.0.17:5432\n"
+
+
+def confluence_setup():
+
+    if container_check("confluence") != "running":
+
+        local_docker_check("uwe_confluence:101")
+
+        confluence_container = docker_client.containers.create("uwe_confluence:101", 
+        detach=True, 
+        name="confluence")
+
+        docker_client.networks.get("uwe_tek").connect("confluence", 
+        ipv4_address="172.18.0.19")
+
+        confluence_container.start()
+
+        container_check("confluence", "running")
+
+        containers.append("confluence")
+
+        # Attempts to do this through the docker API didn't work...?
+        #result = subprocess.run(['gnome-terminal', '-x', 'bash', '-c', 'docker exec confluence nohup /tomcat_to_stdout.sh &'], capture_output=True, text=True)
+
+        #print(result.stdout)
+        #print(result.stderr)
+
+        service_check("http://172.18.0.19:8090")
+
+        #TODO - Add in docker exec for nohup
+    
+    return "uwe_confluence:101 is up and running on 172.18.0.19:8090\n"
+
+
 def traffic_creation_setup():
 
     container_names = ["blue_team", "red_team"]
@@ -351,24 +423,44 @@ if __name__ == '__main__':
 
     sub_network_check()
 
-    # Done first to avoid polluting the logs with mysql test connections
-    mysql_setup()
+    #mysql_setup()
 
-    running_container_info += phpmyadmin_setup()
-    running_container_info += joomla_setup()
+    running_container_info += postgres_setup()
+    running_container_info += confluence_setup()
+
+    #running_container_info += phpmyadmin_setup()
+    #running_container_info += joomla_setup()
+
+    #running_container_info += httpd_setup()
+
+    # Done last to avoid polluting the logs with test connections
     running_container_info += elastic_setup()
     running_container_info += kibana_setup()
 
     log_monitor_setup()
 
-    traffic_creation_setup()
-
-    running_container_info += httpd_setup()
+    #traffic_creation_setup()
 
     print("----------------------------------------------------------------")
     print(running_container_info)
     print("----------------------------------------------------------------")
 
+    cmd_in_container = api_client.exec_create("confluence", "nohup bash /tomcat_to_stdout.sh &")
+
+    result = api_client.exec_start(cmd_in_container, detach=True)
+
+    print("cmd in containr: ", result)
+
     # Make chunk sizing dynamic / changeable on the fly
-    espcap.main("172.18.0.10:9200","any","src net 172.18.0.0/24 and dst net 172.18.0.0/24 and host not 172.18.0.10 and host not 172.18.0.11",50,0,containers)
+
+    #TODO - make the blacklist ammendable so we can add confluence etc on the fly
+
+    #filter_string = "src net 172.18.0.0/24 and dst net 172.18.0.0/24 and host not 172.18.0.10 and host not 172.18.0.11"
+
+    filter_string = "host 172.18.0.1 and host not 172.18.0.10 and host not 172.18.0.11"
+
+    # How small / large an amount of data is cached before being sent to kibana
+    chunk_size = 50
+
+    espcap.main("172.18.0.10:9200","any",filter_string,chunk_size,0,containers)
 
