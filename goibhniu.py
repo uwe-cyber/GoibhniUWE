@@ -5,6 +5,7 @@ import time
 import json
 import docker
 import signal
+import argparse
 import requests
 import psycopg2
 import subprocess
@@ -315,14 +316,16 @@ def confluence_setup():
 
         local_docker_check("uwe_confluence:101")
 
-        confluence_container = docker_client.containers.create("uwe_confluence:101", 
-        detach=True, 
-        name="confluence")
+        #confluence_container = docker_client.containers.create("uwe_confluence:101", 
+        #detach=False, 
+        #name="confluence")
 
-        docker_client.networks.get("uwe_tek").connect("confluence", 
-        ipv4_address="172.18.0.19")
+        #docker_client.networks.get("uwe_tek").connect("confluence", 
+        #ipv4_address="172.18.0.19")
 
-        confluence_container.start()
+        #confluence_container.start()
+
+        subprocess.Popen(['gnome-terminal', '-x', 'bash', '-c', 'docker run --name confluence --net uwe_tek --ip 172.18.0.19 -it uwe_confluence:101'], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
 
         container_check("confluence", "running")
 
@@ -339,6 +342,28 @@ def confluence_setup():
         #TODO - Add in docker exec for nohup
     
     return "uwe_confluence:101 is up and running on 172.18.0.19:8090\n"
+
+
+def server_os_setup(target_os):
+
+    if container_check(target_os) != "running":
+
+        local_docker_check("uwe_{}:101".format(target_os))
+
+        os_container = docker_client.containers.create("uwe_{}:101".format(target_os), 
+        detach=True, 
+        name=target_os)
+
+        docker_client.networks.get("uwe_tek").connect(os_container, 
+        ipv4_address="172.18.0.200")
+        
+        os_container.start()
+
+        container_check(target_os, "running")
+
+        containers.append(target_os)
+    
+    return "uwe_{}:101 is up and running on 172.18.0.200\n".format(target_os)
 
 
 def traffic_creation_setup():
@@ -416,10 +441,22 @@ def sub_network_check():
 # Add in clean container shutdown on keyboard interrupt ...?        
 if __name__ == '__main__':
 
+    supported_os = ["ubuntu"]
+
+    parser = argparse.ArgumentParser(description="CHANGEME")
+
+    parser.add_argument("-os", help="Select the server OS. Accepted values are:\n{}\ndefaults to 'ubuntu'".format(supported_os), default="ubuntu")
+
+    args = parser.parse_args()
+    target_os = args.os.lower()
+
     running_container_info = "\n"
 
     if os.geteuid() != 0:
         exit("This script needs elevated privileges.\nPlease try again, this time using 'sudo'. Exiting.")
+
+    if target_os not in supported_os:
+        exit("{} is not a support os. Please select a supported OS:\n{}".format(target_os,str(supported_os)))
 
     sub_network_check()
 
@@ -432,6 +469,9 @@ if __name__ == '__main__':
     #running_container_info += joomla_setup()
 
     #running_container_info += httpd_setup()
+
+
+    running_container_info += server_os_setup(target_os.lower())
 
     # Done last to avoid polluting the logs with test connections
     running_container_info += elastic_setup()

@@ -1,0 +1,33 @@
+FROM ubuntu:22.10
+
+RUN apt update
+
+RUN apt install -y rsyslog nano sudo openssl
+
+RUN sed -i '/imklog/s/^/#/' /etc/rsyslog.conf
+
+COPY Configs/50-default.conf /etc/rsyslog.d/50-default.conf
+
+COPY Configs/bash.bashrc /etc/bash.bashrc
+
+COPY Scripts/ubuntu_rsyslogd_to_stdout.sh /usr/bin/entrypoint
+
+RUN chmod +x /usr/bin/entrypoint
+
+RUN echo "root:root" | chpasswd
+
+RUN useradd -ms /bin/bash -p "$(openssl passwd -1 ubuntu)" ubuntu
+
+RUN chmod u+s $(which rsyslogd)
+
+RUN touch /var/log/syslog
+
+RUN chown syslog:adm /var/log/syslog
+
+RUN chmod a+r /var/log/syslog
+
+USER ubuntu
+
+WORKDIR /home/ubuntu
+
+CMD ["entrypoint"]
