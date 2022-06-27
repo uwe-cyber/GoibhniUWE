@@ -1,0 +1,5 @@
+FROM jasonish/suricata:latest
+
+COPY Configs/suricata.yaml /etc/suricata/suricata.yaml
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
