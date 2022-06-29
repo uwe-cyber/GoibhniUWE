@@ -431,7 +431,7 @@ def container_attackbox():
 
 		local_docker_check("uwe_attackbox:101")
 
-		subprocess.Popen(['gnome-terminal', '-x', 'bash', '-c', 'docker run --name AttackBox --net uwe_tek --ip 172.18.0.157 -it uwe_attackbox:101'], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+		subprocess.Popen(['gnome-terminal', '-x', 'bash', '-c', 'docker run --name AttackBox --net uwe_tek --ip 172.18.0.157 --cap-add=NET_ADMIN --cap-add=NET_RAW -it uwe_attackbox:101'], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
 
 		containers.append("AttackBox")
     
@@ -559,8 +559,8 @@ if __name__ == '__main__':
     print("----------------------------------------------------------------")
     
     # Run as multiprocess in background so it isn't blocking
-    proc = mp.Process(target = rev_shell_handler, args = (target_os, ))
-    proc.start()
+    #proc = mp.Process(target = rev_shell_handler, args = (target_os, ))
+    #proc.start()
 
     # Make chunk sizing dynamic / changeable on the fly
 
@@ -571,7 +571,18 @@ if __name__ == '__main__':
     #filter_string = "host 172.18.0.1 and host not 172.18.0.10 and host not 172.18.0.11"
 
     # How small / large an amount of data is cached before being sent to kibana
-    chunk_size = 50
-
-    espcap.main("172.18.0.10:9200","any",filter_string,chunk_size,0,containers)
+    chunk_size = 1000
+    
+    output_file = "{}/resource_files/capture_{}.pcap".format(dir_path,time.strftime("%d%m%Y"))
+    
+    #espcap.main("172.18.0.10:9200","any",filter_string,chunk_size,0,containers)
+    
+    #espcap.main(None,"any",filter_string,chunk_size,0,containers,output_file)
+    
+    process = subprocess.Popen(['/usr/bin/tshark', '-i', 'any', '-w', '/home/uwe/Documents/goibhniu/resource_files/capture_29062022.pcap', 'src', 'net', '172.18.0.0/24', 'and', 'dst', 'net', '172.18.0.0/24', 'and', 'host', 'not', '172.18.0.10', 'and', 'host', 'not', '172.18.0.11', 'and', 'host', 'not', '172.18.0.12'],stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+    
+    print(process.stdout.read())
+    
+    
+    
 

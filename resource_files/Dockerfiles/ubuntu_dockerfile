@@ -2,7 +2,13 @@ FROM ubuntu:22.10
 
 RUN apt update
 
-RUN apt install -y rsyslog nano sudo openssl ssh curl net-tools iputils-ping
+RUN apt install -y rsyslog nano sudo openssl ssh curl net-tools iputils-ping python3 dnsutils
+
+RUN apt update
+
+RUN apt install -y python3-pip
+
+RUN pip3 install base58
 
 RUN sed -i '/imklog/s/^/#/' /etc/rsyslog.conf
 
@@ -15,6 +21,10 @@ COPY Scripts/ubuntu_rsyslogd_to_stdout.sh /usr/bin/entrypoint
 RUN chmod +x /usr/bin/entrypoint
 
 RUN echo 'root:Pa$$w0rd1' | chpasswd
+
+RUN mkdir /root/backup
+
+COPY Databases/Test.sql /root/backup/confluence.pgsql
 
 RUN useradd -ms /bin/bash -p "$(openssl passwd -1 ubuntu)" ubuntu
 

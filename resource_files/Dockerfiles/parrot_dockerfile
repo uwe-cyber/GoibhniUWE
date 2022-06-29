@@ -4,4 +4,22 @@ RUN mkdir /usr/share/wordlists/
 
 COPY rockyou.txt /usr/share/wordlists/rockyou.txt
 
+RUN apt update
+
+RUN apt install netcat -y
+
+RUN apt install hydra -y
+
+RUN apt install python3-pip tshark dnsmasq -y
+
+RUN mkdir dns_exfil
+
+COPY Scripts/packetyGrabber.py dns_exfil/packetyGrabber.py
+
+COPY Scripts/packety_requirements.txt dns_exfil/requirements.txt
+
+RUN pip3 install -r dns_exfil/requirements.txt
+
+COPY Configs/dnsmasq.conf /etc/dnsmasq.conf
+
 ENTRYPOINT bash $@

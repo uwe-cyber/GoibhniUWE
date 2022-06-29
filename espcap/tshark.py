@@ -95,7 +95,7 @@ class Tshark(object):
             for interface in proc.stdout:
                 print(interface.decode().rstrip('\n'))
 
-    def make_command(self, nic, count, bpf, pcap_file, interfaces):
+    def make_command(self, nic, count, bpf, pcap_file, interfaces,output_file):
         """ Builds a tshark command to execute.
 
         :param nic: Network interface
@@ -111,14 +111,17 @@ class Tshark(object):
             command.append('-D')
             return command
 
-        command.append('-T')
-        command.append('ek')
+        #command.append('-T')
+        #command.append('ek')
         if nic is not None:
             command.append('-i')
             command.append(nic)
         if count != 0:
             command.append('-c')
             command.append(str(count))
+        if output_file is not None:
+        	command.append('-w')
+        	command.append(output_file)
         if bpf is not None:
             elements = bpf.split()
             for element in elements:

@@ -141,7 +141,7 @@ def packet_template(version, node):
         print("Packet template applied")
 
 
-def init_live_capture(es, tshark, nic, bpf, chunk, count):
+def init_live_capture(es, tshark, nic, bpf, chunk, count, output_file):
     """ Set up for live packet capture.
 
     :param es: Elasticsearch cluster handle, None if packets are dumped to stdout
@@ -153,10 +153,11 @@ def init_live_capture(es, tshark, nic, bpf, chunk, count):
     :param count: Number of packets to capture, 0 if capturing indefinitely,
     """
     try:
-        command = tshark.make_command(nic=nic, count=count, bpf=bpf, pcap_file=None, interfaces=False)
+        command = tshark.make_command(nic=nic, count=count, bpf=bpf, pcap_file=None, interfaces=False,output_file=output_file)
         capture = tshark.capture(command)
         if es is None:
-            dump_packets(capture)
+        	if output_file is None:
+        		dump_packets(capture)
         else:
             helpers.bulk(client=es, actions=index_packets(capture=capture), chunk_size=chunk, raise_on_error=True)
 
@@ -192,7 +193,7 @@ def init_file_capture(es, tshark, pcap_files, chunk):
         sys.ext(1)
 
 
-def main(node, nic, bpf, chunk,count,containers):
+def main(node, nic, bpf, chunk,count,containers,output_file):
     try:
         containers = containers
         
@@ -225,7 +226,7 @@ def main(node, nic, bpf, chunk,count,containers):
         syslog.syslog("espcap started")
 
         if nic is not None:
-            init_live_capture(es=es, tshark=tshark, nic=nic, bpf=bpf, chunk=chunk, count=count)
+            init_live_capture(es=es, tshark=tshark, nic=nic, bpf=bpf, chunk=chunk, count=count,output_file=output_file)
 
     except Exception as e:
         print('[ERROR] ', e)
