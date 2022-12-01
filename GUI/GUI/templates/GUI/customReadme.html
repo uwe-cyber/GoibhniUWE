@@ -1,0 +1,23 @@
+{% extends 'GUI/dependencies.html' %}
+
+{% load static %}
+{% load markdownify %}
+
+{% block content %}
+
+<div class="container ">
+    
+    {{htmlmarkdown | markdownify }}
+        
+</div>
+
+<form method="POST" action="/customDockerfile/">
+    {% csrf_token %}
+    {% for key, value in docker_files.items %}
+        <button name="selected_file" type="submit" class="btn btn-primary" value="{{value}}">{{key}}</button>
+    {% endfor %}
+    <button name="selected_vuln" type="submit" class="btn btn-primary" formaction="/cvePage/">Select This CVE</button>
+</form> 
+  
+{% endblock %}
+

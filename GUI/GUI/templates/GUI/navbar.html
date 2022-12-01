@@ -1,0 +1,35 @@
+{% load static %}
+
+
+<style>
+  .greet{
+    font-size: 18px;
+    color: #fff;
+    margin-right: 20px;
+  }
+</style>
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+  <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+    <span class="navbar-toggler-icon"></span>
+  </button>
+  <div class="collapse navbar-collapse" id="navbarNav">
+
+    <ul class="navbar-nav">
+      
+      <li class="nav-item active">
+        <a class="nav-link" href="{% url 'home' %}">Home</a>
+      </li>
+        <a class="nav-link" href="{% url 'vulnhub' %}">Vulnhub Containers</a>
+      </li>
+        <a class="nav-link" href="{% url 'custom' %}">Custom Containers</a>
+      </li>
+        <a class="nav-link" href="{% url 'environment' %}">Envrionment Setup and Deployment</a>
+      </li>
+        <a class="nav-link" href="{% url 'userDefined' %}">User Defined Scenarios</a>
+      </li>
+        <a class="nav-link" href="{% url 'dockerfileEditing' %}">Dockerfile Editing</a>
+      </li>
+      <li class="nav-item active">
+
+</nav>

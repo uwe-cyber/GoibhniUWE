@@ -1,0 +1,39 @@
+
+{% extends 'GUI/dependencies.html' %}
+
+{% block content %}
+{% load static %}
+<div class="container ">
+<h1>Goibhniu</h1>
+
+<h5>
+All containers are taken from vulnhub<br>
+<br>
+Please select from the following vulnerabilitiy types - All mappings are done using CWE<br>
+<br> 
+Update vulnhub resources and CVE to CWE mappings - Warning this can take a long time
+<form method="POST" action="">
+  {% csrf_token %}
+  <button type="submit" class="btn btn-primary">Update</button>
+</form>
+</h5>
+
+<br>
+
+<form method="POST" action="cvePage/">
+  {% csrf_token %}
+  <select name="selected_cves">
+  {% for key, value in vulnerabilities.items %}
+      <option value="{{ key }} + {{ value }}">{{ key }}</option>
+  {% endfor %}
+  <option value="All">All</option>
+  </select>
+  <br>
+  <br>
+  <button type="submit" class="btn btn-primary">Select</button>
+</form>
+
+
+</div>
+{% endblock %}
+ 

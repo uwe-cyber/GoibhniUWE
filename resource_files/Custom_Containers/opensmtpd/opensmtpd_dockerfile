@@ -1,0 +1,19 @@
+FROM vulhub/opensmtpd:6.6.1p1
+
+RUN apt update
+
+RUN apt install -y iptables
+
+RUN touch /root/.forward
+
+RUN echo "root@maildomain.com" > /root/.forward
+
+COPY resolv.conf /etc/resolv.conf.override
+
+COPY opensmtpd_entrypoint.sh /docker-entrypoint.sh
+
+RUN chmod +x /docker-entrypoint.sh
+
+EXPOSE 25 587
+
+ENTRYPOINT ["/docker-entrypoint.sh"]

@@ -1,7 +1,0 @@
-FROM vulhub/confluence:7.13.6
-
-COPY Configs/confluence.cfg.xml /var/atlassian/application-data/confluence/
-
-COPY Scripts/tomcat_to_stdout.sh /tomcat_to_stdout.sh
-
-ENTRYPOINT ["/entrypoint.py"]

@@ -1,0 +1,41 @@
+
+{% extends 'GUI/dependencies.html' %}
+
+{% block content %}
+{% load static %}
+<div class="container ">
+<h1>Goibhniu</h1>
+
+<h5>
+Setup your container range environment<br>
+<br>
+Containers can be set as internal or external - If both networks are utilised then the TargetOS will be the bridge between networks<br>
+<br> 
+You can add aditional auxillary containers to your environment such as SMTPD, DNS or a Random Traffic Generator - To swap containers between avaliable and selected select and click update<br>
+</h5>
+
+Currently selected vulnerabilities:<br>
+<br>
+<form method="POST" action="">
+  {% csrf_token %}
+  <select name="selected_container"  multiple size="10">
+  {% for key, value in containers.items  %}
+      <option value="{{ value }}">{{ key }}</option>
+  {% endfor %}
+  </select>
+  <br>
+  <button type="submit" class="btn btn-primary">View Dockerfile</button>
+</form>
+
+<form method="POST" action="">
+    {% csrf_token %}
+    <textarea id="file_to_edit" name="file_to_edit" cols="75" rows="25">
+        {{ context_item }}
+    </textarea>
+    <br>
+    <input type="text" name="build_tag" id="build_tag" placeholder='{{ suggested_tag }}' size="40"><br>
+    <button type="submit" class="btn btn-primary">Save and Build image</button>
+</div>
+
+{% endblock %}
+ 

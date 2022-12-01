@@ -1,0 +1,3 @@
+[submodule "resource_files/vulnhub"]
+	path = resource_files/vulnhub
+	url = https://github.com/vulhub/vulhub

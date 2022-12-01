@@ -1,0 +1,15 @@
+FROM mysql:8.0.29
+
+COPY Test.sql /tmp/
+COPY joomla_db.sql /tmp/
+
+RUN chown mysql /tmp/*.sql
+
+COPY mysql_entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+
+EXPOSE 3306 33060
+CMD ["mysqld"]

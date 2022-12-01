@@ -1,0 +1,7 @@
+FROM jpillora/dnsmasq:latest
+
+RUN apk add iptables
+
+COPY dnsmasq.conf /etc/dnsmasq.conf
+
+ENTRYPOINT ["webproc","--config","/etc/dnsmasq.conf","--user","admin","--pass","montecarlo","--","dnsmasq","--no-daemon"]

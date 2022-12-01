@@ -1,0 +1,15 @@
+base58==2.1.1
+Django==4.1.2
+django_markdown_view==0.0.5
+docker_py==1.10.6
+GitPython==3.1.29
+Markdown==3.3.4
+networkx==2.5
+plotly==4.14.3
+psutil==5.8.0
+psycopg2==2.8.6
+pyshark==0.5.3
+PyYAML==6.0
+requests==2.25.1
+scapy==2.4.4
+urllib3==1.26.5

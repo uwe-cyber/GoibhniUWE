@@ -1,0 +1,46 @@
+
+{% extends 'GUI/dependencies.html' %}
+
+{% block content %}
+{% load static %}
+<div class="container ">
+<h1>Goibhniu</h1>
+
+<h5>
+Setup your container range environment<br>
+<br>
+Pre-defined user scenario to deploy - This will deployed in a new network environment to allow multiple deployments to run at the same time<br>
+</h5>
+
+
+    {{ graph | safe}}
+
+    <form method="POST" action="">
+        {% csrf_token %}
+            <h5>If you have included the random traffic generator you need to provide a target and list of pages (using the placeholder format)</h5>
+            <input type="text" name="traffic_target" id="traffic_target" placeholder='ip.address "list;of;target;pages"' size="40"><br>
+        <br>
+            <h5>If you have included the auto attack you need to provide a target and list of scanners (using the placeholder format)</h5>
+            <input type="text" name="auto_attack_target" id="auto_attack_target" placeholder='ip.address "nmap;nikto;wpscan"' size="40"><br>
+        <br>
+        <h5>Please select your preferred target OS:</h5>
+            <input type="checkbox" id="target_os" name="target_os" value="ubuntu" checked/>
+            <label for="target_os">Ubuntu</label>
+
+            <input type="checkbox" id="target_os" name="target_os" value="alpine" />
+            <label for="target_os">Alpine</label><br>
+        <br>
+        <input type="hidden" name="deploy" id="deploy" value="deploy" >
+        <button type="submit" class="btn btn-primary">Deploy!</button>
+    </form>
+
+    <form method="POST" action="">
+        {% csrf_token %}
+        <input type="hidden" name="end_deployment" id="end_deployment" value="end_deployment" >
+        <button type="submit" class="btn btn-primary">Stop!</button>
+    </form>
+
+</div>
+
+{% endblock %}
+ 

@@ -1,4 +1,0 @@
-- module: suricata
-  eve:
-    enabled: true
-    var.paths: ["/var/log/suricata/fast.log"]
