@@ -35,12 +35,12 @@ Goibhniu uses a simple Django based API that is used to view:
         * Select and view pre-existing custom containers
 
     * Environment and Setup Deployment
-        * The `Environment and Setup Deployment` allows end users to customise their container range topography, adding in auxillary containers, move containers between networks and save scenarios once setup and created. It also provides a graphical representation of the current container network deployment so end users can make note of assigned IP addresses and container connextability.
-
-        ![Network Diagram Example](images/APT_41.png?raw=true "Network Diagram Example")
+        * Allows end users to customise their container range topography, adding in auxillary containers, move containers between networks and save scenarios once setup and created. It also provides a graphical representation of the current container network deployment so end users can make note of assigned IP addresses and container connextability.
 
     * User Defined Scenarios
         * End users can save scenarios preior to deployment and then load them to save on setup time. Using this in combination with the `auto_attack` functionality end users can quickly and easily replicate attacks multiple times
 
     * Edit dockerfiles
         * Edit dockerfiles for containers selected from either Vulnhub or pre-existing custom containers. These can then be saved as new custome containers, selectable for future use and deployment
+
+![Network Diagram Example](images/APT_41.png?raw=true "Network Diagram Example")
