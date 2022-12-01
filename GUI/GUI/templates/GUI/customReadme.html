@@ -16,7 +16,7 @@
     {% for key, value in docker_files.items %}
         <button name="selected_file" type="submit" class="btn btn-primary" value="{{value}}">{{key}}</button>
     {% endfor %}
-    <button name="selected_vuln" type="submit" class="btn btn-primary" formaction="/cvePage/">Select This CVE</button>
+    <button name="selected_custom_containers" type="submit" class="btn btn-primary" value="{{selected_cc}}" formaction="/custom">Select This CVE</button>
 </form> 
   
 {% endblock %}

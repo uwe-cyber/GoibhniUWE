@@ -61,6 +61,8 @@ class scenario_template:
         self.tshark_process_pid = 0
         self.listen_process_pid = 0
         self.dockerfile_to_edit = ""
+        self.suggested_tag = ""
+        self.selected_container = ""
 
 current_scenario = scenario_template("current")
 
@@ -624,11 +626,9 @@ def customReadmeView(request):
 
     selected_cc = request.POST["selected_custom_containers"]
 
-    cc_readme_dir = "{}/Custom_Containers/READMEs".format(resource_file_path)
+    cc_dir = "{}/Custom_Containers/{}".format(resource_file_path,selected_cc)
 
-    cc_dockerfiles_dir = "{}/Custom_Containers/Dockerfiles".format(resource_file_path)
-
-    readme_file = os.path.join(cc_readme_dir, "{}.md".format(selected_cc.upper()))
+    readme_file = os.path.join(cc_dir, "README.md")
 
     readme_str = ""
 
@@ -640,7 +640,7 @@ def customReadmeView(request):
 
     docker_files=dict()
 
-    files = os.listdir(cc_dockerfiles_dir)
+    files = os.listdir(cc_dir)
 
     for f in files:
         if f.lower().__contains__(selected_cc):
@@ -648,7 +648,8 @@ def customReadmeView(request):
     
     context = {
         'htmlmarkdown':htmlmarkdown,
-        'docker_files':docker_files
+        'docker_files':docker_files,
+        'selected_cc':selected_cc
     }
 
     return render(request, 'GUI/customReadme.html', context)
@@ -673,11 +674,11 @@ def dockerfileView(request):
 def customDockerfileView(request):
     global selected_cc
 
-    cc_dockerfiles_dir = "{}/Custom_Containers/Dockerfiles".format(resource_file_path)
+    cc_dir = "{}/Custom_Containers/{}".format(resource_file_path,selected_cc)
 
     selected_file = request.POST["selected_file"]
 
-    docker_file = os.path.join(cc_dockerfiles_dir, selected_file)
+    docker_file = os.path.join(cc_dir, selected_file)
 
     docker_f = open(docker_file, 'r')
 
@@ -691,17 +692,23 @@ def customDockerfileView(request):
 def dockerfileEditingView(request):
     global current_scenario
 
-    context_item = "#No dockerfile selected or exists"
-
     suggested_tag = "container:{}".format(time.strftime("%d%m%Y"))
+
+    saved_in_location = ""
    
     pp_containers = dict()
+
+    docker_compose_file = ""
+
+    docker_build_result = ""
+
+    docker_file = "#No dockerfile selected or exists"
 
     for container in current_scenario.selected_vulns:
         pp_containers[container.split("vulnhub")[1]] = container
     
-    for container in current_scenario.selected_custom_containers:
-        pp_containers[container] = os.path.join(resource_file_path,"Custom_Containers/Dockerfiles")
+    #for container in current_scenario.selected_custom_containers:
+    #    pp_containers[container] = os.path.join(resource_file_path,"Custom_Containers/{}".format(container))
     
     if request.method == "POST":
 
@@ -710,26 +717,70 @@ def dockerfileEditingView(request):
 
             container = [k for k,v in pp_containers.items() if dockerfile_path == v][0]
 
+            current_scenario.selected_container = container
+
             files = os.listdir(dockerfile_path)
 
             for f in files:
-                if f == "dockerfile" or f.__contains__(container) and f.__contains__("dockerfile"):
-                    current_scenario.dockerfile_to_edit = os.path.join(dockerfile_path,f)
-                    with open(current_scenario.dockerfile_to_edit) as docker_file:
-                        context_item = "# Loaded {} dockerfile from {}\n".format(container, dockerfile_path)
-                        context_item += docker_file.read()
+                print(f)
+                if f.lower().__contains__("dockerfile"):
+                    with open(os.path.join(dockerfile_path,f)) as d_file:
+                        docker_file = "#Dockerfile loaded from {}\n".format(dockerfile_path)
+                        docker_file += d_file.read()
 
-            suggested_tag = suggested_tag.replace("container",container)
+                if f.lower().__contains__("compose"):
+                    with open(os.path.join(dockerfile_path,f)) as dc_file:
+                        docker_compose_file = "{} - Docker Compose file\n".format(container)
+                        docker_compose_file += dc_file.read()
+
+            suggested_tag = suggested_tag.replace("container",container.replace("/","_")[1:])
+            current_scenario.suggested_tag = suggested_tag
 
         if "file_to_edit" in request.POST:
+
+            file_path_safe_container = current_scenario.selected_container.replace("/","_")[1:]
+
+            new_container_path = os.path.join(resource_file_path,"Custom_Containers", file_path_safe_container)
+
+            old_container_path = "{}/{}".format(vulnhub_dir,current_scenario.selected_container)
+
+            if not os.path.isdir(new_container_path):
+                os.makedirs(new_container_path) 
+
             file_data = request.POST["file_to_edit"]
-            print(file_data)
-            print(current_scenario.dockerfile_to_edit)
+
+            with open(os.path.join(new_container_path,"dockerfile"), "w") as new_dockerfile:
+                new_dockerfile.write(file_data)
+
+            shutil.copytree(old_container_path, new_container_path, dirs_exist_ok=True)
+
+            #with open (os.path.join(resource_file_path,"Custom_Containers/user_defined_containers.json")) as json_dump_file:
+
+            saved_in_location = "A copy of {} has been moved to {} - Complete with the edited dockerfile".format(current_scenario.selected_container, new_container_path)
+
+            if "save_and_build" in request.POST:
+
+                tag = request.POST["build_tag"]
+
+                if tag == "":
+                    tag = current_scenario.suggested_tag
+
+                try:
+                    for line in api_client.build(path=new_container_path, rm=True, tag="django_cve-2019-14234:01122022"):
+                        print(line)
+                except Exception as e:
+                    docker_build_result = str(e)
+                
+                if docker_build_result == "":
+                    docker_build_result = ""
 
     context = {
         'containers':pp_containers,
-        'context_item':context_item,
-        'suggested_tag': suggested_tag
+        'docker_compose_file': docker_compose_file,
+        'file_contents':docker_file,
+        'suggested_tag': suggested_tag,
+        'saved_in':saved_in_location,
+        'docker_build_result':docker_build_result
 
     }
     
@@ -909,6 +960,8 @@ def deploy_containers(scenario, required_networks,traffic_target, auto_attack_ta
     
         if not os.path.exists(capture_output):
             os.mknod(capture_output, mode = 0o666)
+
+        # TODO: Add in toggle / switch for this
 
         tshark_process = subprocess.Popen(['/usr/bin/tshark', '-i', 'any', '-w', capture_output, 'src', 'net', '{}.0.0/15'.format(replace_subnet_dict["uwe_tek_external_usd"]), 'and', 'dst', 'net', '{}.0.0/15'.format(replace_subnet_dict["uwe_tek_external_usd"])],stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
 
