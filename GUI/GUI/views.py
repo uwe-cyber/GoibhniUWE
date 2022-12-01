@@ -3,6 +3,7 @@ import os
 #import ast
 import git
 import sys
+import copy
 import time
 import json
 import stat
@@ -47,6 +48,7 @@ class scenario_template:
         self.selected_vulns = []
         self.selected_vulns_child_containers = dict()
         self.selected_custom_containers = []
+        self.custom_vulnhub_containers = []
         self.targetos="targetos:172.18.0.200"
         self.attackbox="attackbox:172.18.0.157"
         self.current_external_ip = "172.18.0.11"
@@ -181,6 +183,12 @@ def customView(request):
 
     cc_dict = custom_containers
 
+    custom_vulnhub_containers = os.listdir("{}/Custom_Containers/custom_vulnhub_containers".format(resource_file_path))
+
+    for container in custom_vulnhub_containers:
+        current_scenario.custom_vulnhub_containers.append(container)
+        cc_dict[container] = "{}/Custom_Containers/custom_vulnhub_containers/{}".format(resource_file_path,container)
+
     if "selected_custom_containers" in request.POST:
         selected_ccs = request.POST.getlist("selected_custom_containers")
         for cc in selected_ccs:
@@ -220,6 +228,13 @@ def environmentView(request):
                 current_scenario.selected_vulns_child_containers[service] = container_vlun
             
         for container in current_scenario.selected_custom_containers:
+            if container in current_scenario.custom_vulnhub_containers:
+                print(container)
+                dcf_data = yaml_data_from_docker_compose(container)[0]
+
+                for service in dcf_data["services"]: 
+                    current_scenario.selected_vulns_child_containers[service] = container
+
             current_scenario.added_containers[container]="External"
 
     if request.method == "POST":
@@ -740,7 +755,7 @@ def dockerfileEditingView(request):
 
             file_path_safe_container = current_scenario.selected_container.replace("/","_")[1:]
 
-            new_container_path = os.path.join(resource_file_path,"Custom_Containers", file_path_safe_container)
+            new_container_path = os.path.join(resource_file_path,"Custom_Containers/custom_vulnhub_containers", file_path_safe_container)
 
             old_container_path = "{}/{}".format(vulnhub_dir,current_scenario.selected_container)
 
@@ -855,9 +870,17 @@ def deploy_containers(scenario, required_networks,traffic_target, auto_attack_ta
         if custom_container in custom_containers.keys():
             selected_dict = custom_containers
 
-        if re.match(r"[/]\w*[/]",custom_container):
+        if re.match(r"[/]\w*[/]",custom_container) or re.match(r"\w*[_]",custom_container):
+            print("REEEEEE")
+
             parent_container = custom_container.split(" ")[0]
-            if "{}{}".format(vulnhub_dir,parent_container) in scenario.selected_vulns:
+
+            if os.path.isdir("{}{}".format(vulnhub_dir,parent_container)) and "{}{}".format(vulnhub_dir,parent_container) in scenario.selected_vulns:
+                print("vulnhub")
+                running_container_info += docker_compose_container_setup(scenario,parent_container)
+                continue
+            if os.path.isdir("{}/Custom_Containers/custom_vulnhub_containers/{}".format(resource_file_path,parent_container)) and parent_container in scenario.selected_custom_containers:
+                print("custom")
                 running_container_info += docker_compose_container_setup(scenario,parent_container)
                 continue
 
@@ -1117,11 +1140,26 @@ def yaml_data_from_docker_compose(container):
 
     docker_compose_file = ""
 
-    files = os.listdir("{}{}".format(vulnhub_dir,container))
+    files = ""
 
-    for f in files:
-        if f.lower().__contains__("compose"):
-            docker_compose_file = "{}/{}/{}".format(vulnhub_dir,container,f)
+    print(container)
+
+    if os.path.isdir("{}{}".format(vulnhub_dir,container)):
+
+        files = os.listdir("{}{}".format(vulnhub_dir,container))
+
+        for f in files:
+            if f.lower().__contains__("compose"):
+                docker_compose_file = "{}/{}/{}".format(vulnhub_dir,container,f)
+
+    if os.path.isdir("{}/Custom_Containers/custom_vulnhub_containers/{}".format(resource_file_path,container)):
+
+        files = os.listdir("{}/Custom_Containers/custom_vulnhub_containers/{}".format(resource_file_path,container))
+
+        for f in files:
+            if f.lower().__contains__("compose"):
+                docker_compose_file = "{}/Custom_Containers/custom_vulnhub_containers/{}/{}".format(resource_file_path,container,f)
+
 
     with open(docker_compose_file) as dcf:
         dcf_data = yaml.safe_load(dcf)
