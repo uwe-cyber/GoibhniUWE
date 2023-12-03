@@ -3,6 +3,20 @@
 
 {% block content %}
 {% load static %}
+
+<style>
+  .select-form {
+    display: inline-block;
+    vertical-align: top;
+    margin-right: 200px;
+  }
+  .select-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+</style>
+
 <div class="container ">
 <h1>Goibhniu</h1>
 
@@ -13,33 +27,35 @@ These containers have been created by the Goibhniu maintiners or end users - A b
 </h5>
 
 <br>
-
-<form method="POST" action="customReadme/">
-  {% csrf_token %}
-  <select name="selected_custom_containers" multiple size="10">
-  {% for container in custom_containers %}
-      <option value="{{ container }}">{{ container }}</option>
-  {% endfor %}
-</select>
-<br>
-<br>
-<button type="submit" class="btn btn-primary">View</button>
-<button type="submit" class="btn btn-primary" formaction="">Select</button>
-</form>
-
-<h5>
-  Currently selected custom containers:<br>
-  <form method="POST" action="">
+<div class="select-container ">
+  <form method="POST" action="customReadme/" class="select-form">
     {% csrf_token %}
-    <select name="remove_custom_container"  multiple size="10">
+    <select name="selected_custom_containers" multiple size="10" style="width: 300px;">
+    {% for container in custom_containers %}
+        <option value="{{ container }}">{{ container }}</option>
+    {% endfor %}
+  </select>
+  <br>
+  <br>
+  <button type="submit" class="btn btn-primary">View</button>
+  <button type="submit" class="btn btn-primary" formaction="">Select</button>
+  </form>
+
+  <form method="POST" action="" class="select-form">
+    {% csrf_token %}
+    <select name="remove_custom_container"  multiple size="10" style="width: 300px;">
     {% for vuln in selected_custom_containers %}
         <option value="{{ vuln }}">{{ vuln }}</option>
     {% endfor %}
     </select>
     <br>
+    <br>
     <button type="submit" class="btn btn-primary">Remove</button>
+    <br>
+    <br>
+    <h5>Currently selected custom containers
   </form>
-
+  </div>
 </div>
 {% endblock %}
  

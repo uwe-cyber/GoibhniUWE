@@ -29,8 +29,6 @@ urlpatterns = [
     path('customReadme/', customReadmeView, name='customReadme'),
     path('dockerfile/', dockerfileView, name='dockerfile'),
     path('customDockerfile/', customDockerfileView, name='customDockerfile'),
-    path('userDefined', userDefinedView, name='userDefined'),
-    path('userDefinedEnviroment/', userDefinedEnviromentView, name='userDefinedEnviroment'),
     path('dockerfileEditing/', dockerfileEditingView, name='dockerfileEditing')
 ]
 urlpatterns+=static(settings.MEDIA_URL,document_root=settings.MEDIA_ROOT)

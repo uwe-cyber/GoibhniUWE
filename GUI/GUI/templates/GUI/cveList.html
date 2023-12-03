@@ -3,6 +3,20 @@
 
 {% block content %}
 {% load static %}
+
+<style>
+  .select-form {
+    display: inline-block;
+    vertical-align: top;
+    margin-right: 200px;
+  }
+  .select-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+</style>
+
 <div class="container ">
 <h1>{{selected_cve_types}}</h1>
 
@@ -10,41 +24,42 @@
 The following CVEs can be deployed - Please note some deployments may require manual configuration.
 <br>
 <br>
+<br>
 All containers are taken from vulnhub
 </h5>
-
-<form method="POST" action="/readme/">
-  {% csrf_token %}
-  <select name="vuln_path"  multiple size="10">
-  {% for key, value in selected_cves.items %}
-      <option value="{{ value }}">{{ key }}</option>
-  {% endfor %}
-  </select>
-  <br>
-  <br>
-  <button type="submit" class="btn btn-primary">View</button>
-  <button type="submit" class="btn btn-primary" formaction="">Select</button>
-</form>
-
 <br>
 
-<h5>
-Currently selected vulnerabilities:<br>
-<br>
-<form method="POST" action="">
-  {% csrf_token %}
-  <select name="remove_vuln"  multiple size="10">
-  {% for vuln in selected_vulns %}
-      <option value="{{ vuln }}">{{ vuln }}</option>
-  {% endfor %}
-  </select>
-  <br>
-  <button type="submit" class="btn btn-primary">Remove</button>
-</form>
+<div class="select-container ">
+  <form method="POST" action="/readme/" class="select-form">
+    {% csrf_token %}
+    <select name="vuln_path"  multiple size="10" style="width: 300px;">
+    {% for key, value in selected_cves.items %}
+        <option value="{{ value }}">{{ key }}</option>
+    {% endfor %}
+    </select>
+    <br>
+    <br>
+    <button type="submit" class="btn btn-primary">View</button>
+    <button type="submit" class="btn btn-primary" formaction="">Select</button>
+  </form>
 
-</h5>
+  <form method="POST" action="" class="select-form">
+    {% csrf_token %}
+    <select name="remove_vuln"  multiple size="10" style="width: 300px;">
+    {% for vuln in selected_vulns %}
+        <option value="{{ vuln }}">{{ vuln }}</option>
+    {% endfor %}
+    </select>
+    <br>
+    <br>
+    <button type="submit" class="btn btn-primary">Remove</button>
+    <br>
+    <br>
+    <br>
+    <h5>Currently selected vulnerabilities</h5>
+  </form>
 
-
+  </h5>
 </div>
 {% endblock %}
  

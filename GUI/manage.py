@@ -4,9 +4,9 @@
 import os
 import sys
 import time
-import docker
 import signal
 import binascii
+import cProfile
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
@@ -16,44 +16,46 @@ pcap_file = "capture_{}.pcap".format(time.strftime("%d%m%Y"))
 
 output_fldr = "{}output_files/{}".format(dir_path.split("GUI")[0],time.strftime("%d-%m-%Y_%H%M"))
 
-api_client = docker.APIClient(base_url='unix://var/run/docker.sock')
-
 def log_clean_up():
-	with open("{}/{}".format(resource_file_path,pcap_file), 'rb') as f:
-		content = f.read()
 
-	hex_str = binascii.hexlify(content).decode('ascii')
+	try:
+		with open("{}/{}".format(resource_file_path,pcap_file), 'rb') as f:
+			content = f.read()
 
-	rpl_hex_str = hex_str.replace("ac120001","ac12009d")
+		hex_str = binascii.hexlify(content).decode('ascii')
 
-	file_str = binascii.unhexlify(rpl_hex_str)
+		rpl_hex_str = hex_str.replace("ac1c0001","ac1c009d")
 
-	with open("{}/{}".format(output_fldr,pcap_file), 'wb') as f:
-		f.write(file_str)
+		file_str = binascii.unhexlify(rpl_hex_str)
 
-	os.chown("{}/{}".format(output_fldr,pcap_file),1001,1001)
+		if not os.path.isdir(output_fldr):
+			os.makedirs(output_fldr)
 
-	for root, dirs, files in os.walk("{}/resource_files/logfiles".format(dir_path)):
-		for file in [os.path.join(root, f) for f in files]:
-			os.chown(file,1001,1001)
-			os.chmod(file, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH)
+		with open("{}/{}".format(output_fldr,pcap_file), 'wb') as f:
+			f.write(file_str)
 
-			with open(file, 'r') as file_in :
-				filedata = file_in.read()
+		os.chown("{}/{}".format(output_fldr,pcap_file),1001,1001)
+	except Exception as e:
+		print("Error: {}".format(e))
+		print("Pcap clean up already completed")
 
-			filedata = filedata.replace('"172.18.0.1"', '"172.18.0.157"')
-			filedata = filedata.replace('172.18.0.1:', '172.18.0.157:')
+	try:
+		for root, dirs, files in os.walk("{}/resource_files/logfiles".format(dir_path)):
+			for file in [os.path.join(root, f) for f in files]:
+				os.chown(file,1001,1001)
+				os.chmod(file, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH)
 
-			with open("{}/{}".format(output_fldr,os.path.basename(file)), 'w') as file_out:
-				file_out.write(filedata)
+				with open(file, 'r') as file_in :
+					filedata = file_in.read()
 
-	bits, _ = api_client.get_archive("AttackBox", '/var/log/syslog')
+				filedata = filedata.replace('"172.28.0.1"', '"172.28.0.157"')
+				filedata = filedata.replace('172.28.0.1:', '172.28.0.157:')
 
-	tar_f = open('{}/AttackBox_Syslog.tar'.format(output_fldr), 'wb')
-
-	for chunk in bits:
-		tar_f.write(chunk)
-	tar_f.close()
+				with open("{}/{}".format(output_fldr,os.path.basename(file)), 'w') as file_out:
+					file_out.write(filedata)
+	except Exception as e:
+		print("Error: {}".format(e))
+		print("Log clean up already completed")
 	
 	#TODO add in elasticdump commands here
 	
@@ -67,9 +69,16 @@ def log_clean_up():
 	print("\nShutting down - Output files saved in {}".format(output_fldr))
 
 
+def docker_clean_up():
+
+	os.system("docker stop $(docker ps -qa) && docker rm $(docker ps -qa)")
+
+
 def clean_exit(sig, frame):
-	#ac120001 = 172.18.0.1 - Host (browser activity etc)
-	#ac12009d = 172.18.0.157 - AttackBox
+	#ac1c0001 = 172.18.0.1 - Host (browser activity etc)
+	#ac1c009d = 172.18.0.157 - AttackBox
+
+	docker_clean_up()
 
 	log_clean_up()
 
@@ -94,4 +103,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    #cProfile.run('main()')
+	main()

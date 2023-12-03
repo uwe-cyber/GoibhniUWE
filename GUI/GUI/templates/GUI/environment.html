@@ -3,6 +3,20 @@
 
 {% block content %}
 {% load static %}
+
+<style>
+    .select-form {
+      display: inline-block;
+      vertical-align: top;
+      margin-right: 200px;
+    }
+    .select-container {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+    }
+  </style>
+
 <div class="container ">
 <h1>Goibhniu</h1>
 
@@ -14,87 +28,95 @@ Containers can be set as internal or external - If both networks are utilised th
 You can add aditional auxillary containers to your environment such as SMTPD, DNS or a Random Traffic Generator - To swap containers between avaliable and selected select and click update<br>
 </h5>
 
-<form method="POST" action="">
-    {% csrf_token %}
-    <label>Avaliable Auxillary Containers:<br>
-        <select name="avaliable_auxillary_containers" multiple size="10">
-            {% for key, value in avaliable_auxillary_containers.items %}
-                <option value="{{ key }}">{{ key }}</option>
-            {% endfor %}
-        </select>
-    </label>
-    &nbsp 
-    &nbsp 
-    &nbsp
-    &nbsp
-    <label>Selected Auxillary Containers:<br>
-        <select name="selected_auxillary_containers" multiple size="10">
-            {% for key, value in selected_auxillary_containers.items %}
-                <option value="{{ key }}">{{ key }}</option>
-            {% endfor %}
-        </select>
-    </label>
-    <br>
+    <div class="select-container ">
+        <form method="POST" action="" class="select-form">
+            {% csrf_token %}
+            <label>Avaliable Auxillary Containers:<br>
+                <select name="avaliable_auxillary_containers" multiple size="10" style="width: 300px;">
+                    {% for key, value in avaliable_auxillary_containers.items %}
+                        <option value="{{ key }}">{{ key }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            &nbsp 
+            &nbsp 
+            &nbsp
+            &nbsp
+            <label>Selected Auxillary Containers:<br>
+                <select name="selected_auxillary_containers" multiple size="10" style="width: 300px;">
+                    {% for key, value in selected_auxillary_containers.items %}
+                        <option value="{{ key }}">{{ key }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <br>
 
-<h5>
-All containers will be external by default - To swap containers between external and internal select and click update<br>
-</h5>
+        <h5>
+        All containers will be external by default - To swap containers between external and internal select and click update<br>
+        </h5>
 
-        <label>External Containers:<br>
-            <select name="external_containers" multiple size="10">
-                {% for key, value in external_containers.items %}
-                    <option value="{{ key }}">{{ key }}</option>
-                {% endfor %}
-            </select>
-        </label>
-        &nbsp 
-        &nbsp 
-        &nbsp
-        &nbsp
-        <label>Internal Containers:<br>
-            <select name="internal_containers" multiple size="10">
-                {% for key, value in internal_containers.items %}
-                    <option value="{{ key }}">{{ key }}</option>
-                {% endfor %}
-            </select>
-        </label>
-        <br>
-        <button type="submit" class="btn btn-primary">Update</button>
-    </form>
+                <label>External Containers:<br>
+                    <select name="external_containers" multiple size="10" style="width: 300px;">
+                        {% for key, value in external_containers.items %}
+                            <option value="{{ key }}">{{ key }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                &nbsp 
+                &nbsp 
+                &nbsp
+                &nbsp
+                <label>Internal Containers:<br>
+                    <select name="internal_containers" multiple size="10" style="width: 300px;">
+                        {% for key, value in internal_containers.items %}
+                            <option value="{{ key }}">{{ key }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <br>
+                <button type="submit" class="btn btn-primary">Update</button>
+            </form>
+        </div>
+        {{ graph | safe}}
 
-    <form method="POST" action="">
-        {% csrf_token %}
-        <button type="submit" class="btn btn-primary">Save Scenario</button>
-        <input type="text" name="save_scenario" id="save_scenario" placeholder='Scenario Name' size="40">
-    </form>
+        <form method="POST" action="" class="select-form">
+            {% csrf_token %}
+                <h5>If you have included the random traffic generator you need to provide a target and list of pages (using the placeholder format)</h5>
+                <input type="text" name="traffic_target" id="traffic_target" placeholder='ip.address "list;of;target;pages"' size="40"><br>
+            <br>
+                <h5>If you have included the auto attack you need to provide a target and list of scanners (using the placeholder format)</h5>
+                <input type="text" name="auto_attack_target" id="auto_attack_target" placeholder='ip.address "nmap;nikto;wpscan"' size="40"><br>
+            <br>
+            <h5>Please select your preferred target OS:</h5>
+                <input type="checkbox" id="target_os" name="target_os" value="ubuntu" checked/>
+                <label for="target_os">Ubuntu</label>
 
-    {{ graph | safe}}
+                <input type="checkbox" id="target_os" name="target_os" value="alpine" />
+                <label for="target_os">Alpine</label><br>
+            <br>
+            <h5>Please select your logging preferences:</h5>
+                <input type="checkbox" id="pcap" name="pcap" value="true" checked/>
+                <label for="pcap">Pcap</label>
 
-    <form method="POST" action="">
-        {% csrf_token %}
-            <h5>If you have included the random traffic generator you need to provide a target and list of pages (using the placeholder format)</h5>
-            <input type="text" name="traffic_target" id="traffic_target" placeholder='ip.address "list;of;target;pages"' size="40"><br>
-        <br>
-            <h5>If you have included the auto attack you need to provide a target and list of scanners (using the placeholder format)</h5>
-            <input type="text" name="auto_attack_target" id="auto_attack_target" placeholder='ip.address "nmap;nikto;wpscan"' size="40"><br>
-        <br>
-        <h5>Please select your preferred target OS:</h5>
-            <input type="checkbox" id="target_os" name="target_os" value="ubuntu" checked/>
-            <label for="target_os">Ubuntu</label>
+                <input type="checkbox" id="filebeats" name="filebeats" value="true" checked/>
+                <label for="filebeats">Filebeats</label>
 
-            <input type="checkbox" id="target_os" name="target_os" value="alpine" />
-            <label for="target_os">Alpine</label><br>
-        <br>
-        <input type="hidden" name="deploy" id="deploy" value="deploy" >
-        <button type="submit" class="btn btn-primary">Deploy!</button>
-    </form>
+                <input type="checkbox" id="packetbeats" name="packetbeats" value="true" checked/>
+                <label for="packetbeats">Packetbeats</label>
 
-    <form method="POST" action="">
-        {% csrf_token %}
-        <input type="hidden" name="end_deployment" id="end_deployment" value="end_deployment" >
-        <button type="submit" class="btn btn-primary">Stop!</button>
-    </form>
+                <input type="checkbox" id="suricata" name="suricata" value="true" checked/>
+                <label for="suricata">Suricata (will also enable Filebeats)</label>
+            <br>
+            <input type="hidden" name="deploy" id="deploy" value="deploy" >
+            <button type="submit" class="btn btn-primary">Deploy!</button>
+        </form>
 
+        <form method="POST" action="">
+            {% csrf_token %}
+            <input type="hidden" name="end_deployment" id="end_deployment" value="end_deployment" >
+            <button type="submit" class="btn btn-primary">Stop!</button>
+        </form>
+    
 </div>
 
 {% endblock %}
