@@ -15,7 +15,10 @@
       flex-wrap: wrap;
       justify-content: space-between;
     }
-  </style>
+    .hidden {
+      display: none;
+    }
+</style>
 
 <div class="container ">
 <h1>Goibhniu</h1>
@@ -87,13 +90,6 @@ You can add aditional auxillary containers to your environment such as SMTPD, DN
                 <h5>If you have included the auto attack you need to provide a target and list of scanners (using the placeholder format)</h5>
                 <input type="text" name="auto_attack_target" id="auto_attack_target" placeholder='ip.address "nmap;nikto;wpscan"' size="40"><br>
             <br>
-            <h5>Please select your preferred target OS:</h5>
-                <input type="checkbox" id="target_os" name="target_os" value="ubuntu" checked/>
-                <label for="target_os">Ubuntu</label>
-
-                <input type="checkbox" id="target_os" name="target_os" value="alpine" />
-                <label for="target_os">Alpine</label><br>
-            <br>
             <h5>Please select your logging preferences:</h5>
                 <input type="checkbox" id="pcap" name="pcap" value="true" checked/>
                 <label for="pcap">Pcap</label>
@@ -107,8 +103,28 @@ You can add aditional auxillary containers to your environment such as SMTPD, DN
                 <input type="checkbox" id="suricata" name="suricata" value="true" checked/>
                 <label for="suricata">Suricata (will also enable Filebeats)</label>
             <br>
+            <br>
+            <div id="tgt_os_options" class="{% if deployed %}hidden{% endif %}">
+            <h5>Please select your preferred target OS:</h5>
+                <input type="checkbox" id="target_os" name="target_os" value="ubuntu" checked/>
+                <label for="target_os">Ubuntu</label>
+
+                <input type="checkbox" id="target_os" name="target_os" value="alpine" />
+                <label for="target_os">Alpine</label><br>
+            <br>
+            <h5>Enable container escape (for the targetOS) via:</h5>
+                <input type="checkbox" id="mntd_volume" name="mntd_volume" value="true"/>
+                <label for="mntd_volume">Mounted Volume</label>
+
+                <input type="checkbox" id="priv_container" name="priv_container" value="true"/>
+                <label for="priv_container">Privileged Container</label>
+                
+                <input type="checkbox" id="root_user" name="root_user" value="true"/>
+                <label for="root_user">Root user</label>
+            </div>
+            <br>
             <input type="hidden" name="deploy" id="deploy" value="deploy" >
-            <button type="submit" class="btn btn-primary">Deploy!</button>
+            <button type="submit" class="btn btn-primary" onclick="submitForm()">Deploy!</button>
         </form>
 
         <form method="POST" action="">
@@ -116,6 +132,13 @@ You can add aditional auxillary containers to your environment such as SMTPD, DN
             <input type="hidden" name="end_deployment" id="end_deployment" value="end_deployment" >
             <button type="submit" class="btn btn-primary">Stop!</button>
         </form>
+        
+        <script>
+		  function submitForm() {
+			// Hide sections after submission
+			document.getElementById("tgt_os_options").classList.add("hidden");
+		  }
+		</script>
     
 </div>
 

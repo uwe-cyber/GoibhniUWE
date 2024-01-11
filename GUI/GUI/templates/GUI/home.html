@@ -16,8 +16,8 @@ By default all environments will include the following:
     <li>AttackBox - ParrotOS container used to carry out the attacks / actions by our malciious actor</li>
     <li>TargetOS - Currently either Ubuntu or Alpine this is the running OS of our target </li>
     <li>Suricata - IDS with default rules this is to provide logging and an indication of what actions are (and aren't) picked up</li>
-    <li>EFK - Elasticsearch, Filebeats and Kibana to log all activity within the network and collate them into a SIEM which can be used for event monitoring (live or retroactively)</li>
-    <li>Traffic capture - Using the host tshark all traffic between containers is captured, again to allow for event monitoring (live or retroactively)</li>
+    <li>Container Logging - Elasticsearch, Filebeats, Packetbeats and Kibana to log all activity and collate this with the IDS logs into a SIEM which can be used for event monitoring (live or retroactively)</li>
+    <li>Traffic capture - Using the host tcpdump all traffic between containers is captured, again to allow for event monitoring (live or retroactively)</li>
   </ul>
 </h5>
 

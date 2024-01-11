@@ -24,21 +24,6 @@ class Container:
         self.devices = devices
 
 
-def get_uwe_net_interface():
-
-	uwe_net_interface = ""
-
-	addrs = psutil.net_if_addrs()
-	
-	for key, val in addrs.items():
-		for i in val:
-			if "172.28.0.1" in i:
-				uwe_net_interface = key
-				break
-	
-	return uwe_net_interface
-
-
 httpd_container = Container("httpd", "dh157/goibhniu:httpd", ipv4_addr="172.29.0.11", volumes=['{}/Custom_Containers/httpd/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro'.format(resource_files_dir), 
     '{}/Custom_Containers/httpd/htdocs:/usr/local/apache2/htdocs/'.format(resource_files_dir),
     "/etc/timezone:/etc/timezone:ro",
@@ -55,23 +40,7 @@ random_traffic_container = Container("random_traffic", "dh157/goibhniu:traffic_g
 
 auto_attack_container = Container("auto_attack", "dh157/goibhniu:auto_attack", ipv4_addr="172.28.0.142", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"],command='-target 172.28.0.11 -scanners "nmap;wpscan"')
 
-target_container = Container("target", "dh157/goibhniu:ubuntu", ipv4_addr="172.28.0.200", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"], devices=["/dev/input/event0"])
-
 attackbox_container = Container("attackbox", "dh157/goibhniu:attackbox") 
-
-filebeat_container = Container("filebeat", "docker.elastic.co/beats/filebeat:7.17.2", ipv4_addr="172.28.0.9", run_as_user="root", command="-strict.perms=false", environment=["output.elasticsearch.hosts=['172.28.0.10:9200']"], volumes=['{}/Custom_Containers/required_containers/filebeat/filebeat.docker.yml:/usr/share/filebeat/filebeat.yml:ro'.format(resource_files_dir), 
-    '{}/Custom_Containers/required_containers/filebeat/filebeat_suricata.yml:/usr/share/filebeat/modules.d/suricata.yml:ro'.format(resource_files_dir),
-    '{}/logfiles:/var/log/suricata/:ro'.format(resource_files_dir),
-    '/var/lib/docker/containers:/var/lib/docker/containers:ro', 
-    "/var/run/docker.sock:/var/run/docker.sock:ro",
-    "/etc/timezone:/etc/timezone:ro",
-    "/etc/localtime:/etc/localtime:ro"])
-
-suricata_container = Container("suricata", "dh157/goibhniu:suricata")
-
-elasticsearch_container = Container("elasticsearch", "elasticsearch:7.17.2", ipv4_addr="172.28.0.10", svc_check="http://172.28.0.10:9200", default_port="9200", environment=["discovery.type=single-node"], volumes=["/etc/timezone:/etc/timezone:ro", "/etc/localtime:/etc/localtime:ro"])
-
-kibana_container = Container("kibana", "kibana:7.17.2", ipv4_addr="172.28.0.11", svc_check="http://172.28.0.11:5601/status", default_port="5601", volumes=["/etc/timezone:/etc/timezone:ro", "/etc/localtime:/etc/localtime:ro"])
     
 custom_containers ={
 
@@ -88,16 +57,7 @@ aux_containers = {
 }
 
 required_containers ={
-
-    #"target":[target_container,True,[],[]],
     "attackbox":[attackbox_container,False,["popen",'docker run -v /etc/timezone:/etc/timezone:ro -v /etc/localtime:/etc/localtime:ro -v {}/exploit_material/:/exploit_material/ --name attackbox --net uwe_tek_external --ip 172.28.0.157 --cap-add=NET_ADMIN --cap-add=NET_RAW -it dh157/goibhniu:attackbox'.format(dir_path.split("GUI")[0])],["rsyslogd"]],
-}
-
-logging_containers ={
-    "filebeat":[filebeat_container,True,["run",'docker run --rm --name=filebeat_setup --net uwe_tek_external --ip 172.28.0.8 docker.elastic.co/beats/filebeat:7.17.2 setup -E setup.kibana.host=172.28.0.11:5601 -E output.elasticsearch.hosts=["172.28.0.10:9200"]'],[]],
-    "suricata":[suricata_container,False,["run",'docker run -v /etc/timezone:/etc/timezone:ro -v /etc/localtime:/etc/localtime:ro -d --name suricata --net=host --cap-add=net_admin --cap-add=net_raw --cap-add=sys_nice -v {}/logfiles:/var/log/suricata dh157/goibhniu:suricata -i'.format(resource_files_dir)],[]],
-    "elasticsearch":[elasticsearch_container,True,[],[]],
-    "kibana":[kibana_container,True,[],[]],
 }
 
 header_dc = f"""
@@ -106,19 +66,21 @@ version: '2.3'
 services:
   target:
     image: dh157/goibhniu:target_os
-    volumes:
-      - /etc/timezone:/etc/timezone:ro
-      - /etc/localtime:/etc/localtime:ro
     devices:
       - /dev/input/event0
     networks:
-      network:
+      external:
         ipv4_address: 172.28.0.200
+      internal:
+        ipv4_address: 172.29.0.200
     deploy:
       resources:
          limits:
            cpus: '0.50'
            memory: 1g
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
 """
 
 ek_containers_sect = f"""
@@ -130,7 +92,7 @@ ek_containers_sect = f"""
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     networks:
-      network:
+      external:
         ipv4_address: 172.28.0.10
     ports:
       - 9200:9200
@@ -145,7 +107,7 @@ ek_containers_sect = f"""
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     networks:
-      network:
+      external:
         ipv4_address: 172.28.0.11
     ports:
       - 5601:5601
@@ -172,7 +134,7 @@ filebeat_sect = f"""
       - setup.kibana.host=172.28.0.11:5601
       - output.elasticsearch.hosts=['172.28.0.10:9200']
     networks:
-      network:
+      external:
         ipv4_address: 172.28.0.8
     deploy:
       resources:
@@ -203,7 +165,7 @@ filebeat_sect = f"""
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     networks:
-      network:
+      external:
         ipv4_address: 172.28.0.9
     deploy:
       resources:
@@ -224,7 +186,7 @@ packetbeat_sect = f"""
       - setup.kibana.host=172.28.0.11:5601
       - output.elasticsearch.hosts=['172.28.0.10:9200']
     networks:
-      network:
+      external:
         ipv4_address: 172.28.0.7
     deploy:
       resources:
@@ -240,7 +202,8 @@ packetbeat_sect = f"""
       - '-E' 
       - 'output.elasticsearch.hosts=["172.28.0.10:9200"]'
     depends_on:
-      - filebeat
+      kibana:
+        condition: service_healthy
   
   packetbeat:
     image: docker.elastic.co/beats/packetbeat:7.17.2
@@ -287,7 +250,7 @@ suricata_sect = f"""
       - net_raw
       - sys_nice
     command:
-      - "-i br-df7d01c57968"
+      - "-i network_interface"
     network_mode: "host"
     depends_on:
       - elasticsearch
@@ -303,7 +266,7 @@ auto_attack = f"""
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     networks:
-      network:
+      external:
         ipv4_address: 172.28.0.142
     deploy:
       resources:
@@ -324,7 +287,7 @@ traffic_generator = f"""
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     networks:
-      network:
+      external:
         ipv4_address: 172.28.0.42
     deploy:
       resources:
@@ -338,7 +301,10 @@ traffic_generator = f"""
 
 tail_dc = f"""
 networks:
-  network:
+  external:
     name: uwe_tek_external
+    external: true
+  internal:
+    name: uwe_tek_internal
     external: true
 """
