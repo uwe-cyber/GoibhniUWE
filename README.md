@@ -24,7 +24,7 @@ The range also makes use of tshark - Enusre this is installed beforehand. For a 
 
 To run the container range move to the `GUI` folder and run:
 
-`sudo python3 ./manage runserver`
+`sudo python3 ./manage.py runserver`
 
 This should launch the container range (which has been built using Django) and will accessible via the link provided in the terminal.
 
