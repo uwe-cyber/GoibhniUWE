@@ -491,7 +491,6 @@ def environmentView(request):
     previous_container = ""
 
     for container in external_containers:
-
         if container in current_scenario.selected_vulns_child_containers.values():
             child_containers = [k for k,v in current_scenario.selected_vulns_child_containers.items() if v == container]
 
@@ -1195,6 +1194,16 @@ def yaml_data_from_docker_compose(container):
 
     with open(docker_compose_file) as dcf:
         dcf_data = yaml.safe_load(dcf)
+
+    suffix = container.replace("/", "_")
+
+    dcf_data["services"] = {f"{suffix}_{key}": value for key, value in dcf_data['services'].items()}
+
+    for service in dcf_data["services"]:
+        if "depends_on" in dcf_data["services"][service]:
+            for idx in range(len(dcf_data["services"][service]["depends_on"])):
+                item = dcf_data["services"][service]["depends_on"][idx]
+                dcf_data["services"][service]["depends_on"][idx] = f"{suffix}_{item}"
 
     return dcf_data, docker_compose_file
 
