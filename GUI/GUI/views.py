@@ -172,7 +172,7 @@ def vulnhubView(request):
                     software = temp.split("/")[0]
                     cve_cwe_dict[cwe_id]["{} - {}".format(software, cve)] = "vulnhub/" + temp
 
-                if dcf_file:
+                elif dcf_file:
                     cwe_id = "Misc"
 
                     if cwe_id not in cve_cwe_dict:
@@ -181,7 +181,7 @@ def vulnhubView(request):
                     vuln_dir_path = os.path.join(root,dir).replace("//","/")
                     temp = vuln_dir_path.split("vulnhub/")[1]
                     software = temp.split("/")[0]
-                    cve_cwe_dict[cwe_id]["{} - {}".format(software, cve)] = "vulnhub/" + temp
+                    cve_cwe_dict[cwe_id]["{} - {}".format(software, dir)] = "vulnhub/" + temp
 
         with open("{}/cve_cwe_mappings.json".format(resource_file_path), 'w') as fp:
             json.dump(cve_cwe_dict, fp)
@@ -1195,15 +1195,34 @@ def yaml_data_from_docker_compose(container):
     with open(docker_compose_file) as dcf:
         dcf_data = yaml.safe_load(dcf)
 
+<<<<<<< HEAD
+    suffix = container.replace("/", "_").lower()
+=======
     suffix = container.replace("/", "_")
+>>>>>>> 43ddcfe6f40862b3538c5d631f80346d4db7d6d4
 
     dcf_data["services"] = {f"{suffix}_{key}": value for key, value in dcf_data['services'].items()}
 
     for service in dcf_data["services"]:
         if "depends_on" in dcf_data["services"][service]:
+<<<<<<< HEAD
+            if type(dcf_data["services"][service]["depends_on"]) is list:
+                for idx in range(len(dcf_data["services"][service]["depends_on"])):
+                    item = dcf_data["services"][service]["depends_on"][idx]
+                    if not item.__contains__(suffix):
+                        dcf_data["services"][service]["depends_on"][idx] = f"{suffix}_{item}"
+
+            if type(dcf_data["services"][service]["depends_on"]) is dict:
+                keylist = list(dcf_data["services"][service]["depends_on"].keys())
+
+                for key in keylist:
+                    if not key.__contains__(suffix):
+                        dcf_data["services"][service]["depends_on"][f"{suffix}_{key}"] = dcf_data["services"][service]["depends_on"].pop(key)
+=======
             for idx in range(len(dcf_data["services"][service]["depends_on"])):
                 item = dcf_data["services"][service]["depends_on"][idx]
                 dcf_data["services"][service]["depends_on"][idx] = f"{suffix}_{item}"
+>>>>>>> 43ddcfe6f40862b3538c5d631f80346d4db7d6d4
 
     return dcf_data, docker_compose_file
 
