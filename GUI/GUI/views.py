@@ -58,7 +58,8 @@ class scenario_template:
         self.suggested_tag = ""
         self.selected_container = ""
         self.docker_compose_files = []
-        self.ports_in_use = []
+        #Keep these free by default for our own logging
+        self.ports_in_use = [5601, 9200]
 
 current_scenario = scenario_template("current")
 
@@ -1195,17 +1196,12 @@ def yaml_data_from_docker_compose(container):
     with open(docker_compose_file) as dcf:
         dcf_data = yaml.safe_load(dcf)
 
-<<<<<<< HEAD
     suffix = container.replace("/", "_").lower()
-=======
-    suffix = container.replace("/", "_")
->>>>>>> 43ddcfe6f40862b3538c5d631f80346d4db7d6d4
 
     dcf_data["services"] = {f"{suffix}_{key}": value for key, value in dcf_data['services'].items()}
 
     for service in dcf_data["services"]:
         if "depends_on" in dcf_data["services"][service]:
-<<<<<<< HEAD
             if type(dcf_data["services"][service]["depends_on"]) is list:
                 for idx in range(len(dcf_data["services"][service]["depends_on"])):
                     item = dcf_data["services"][service]["depends_on"][idx]
@@ -1218,11 +1214,6 @@ def yaml_data_from_docker_compose(container):
                 for key in keylist:
                     if not key.__contains__(suffix):
                         dcf_data["services"][service]["depends_on"][f"{suffix}_{key}"] = dcf_data["services"][service]["depends_on"].pop(key)
-=======
-            for idx in range(len(dcf_data["services"][service]["depends_on"])):
-                item = dcf_data["services"][service]["depends_on"][idx]
-                dcf_data["services"][service]["depends_on"][idx] = f"{suffix}_{item}"
->>>>>>> 43ddcfe6f40862b3538c5d631f80346d4db7d6d4
 
     return dcf_data, docker_compose_file
 
