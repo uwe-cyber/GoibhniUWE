@@ -389,17 +389,17 @@ def environmentView(request):
                 container_name = container.name
 
                 random_generator = random.SystemRandom()
+                if container_name.__contains__("goibhniuwe__"):
+                    for combo in combinations:
+                        shell = combo[0]
+                        location = combo[1]
+                        flag = "UWE{" + f"FLAG_{format(random_generator.randint(0, 2**80 - 1), '020x')}" +"}"
 
-                for combo in combinations:
-                    shell = combo[0]
-                    location = combo[1]
-                    flag = "UWE{" + f"FLAG_{format(random_generator.randint(0, 2**80 - 1), '020x')}" +"}"
+                        result = container.exec_run(f'{shell} -c "echo {flag} > {location}flag.txt"')
 
-                    result = container.exec_run(f'{shell} -c "echo {flag} > {location}flag.txt"')
-
-                    if result.exit_code == 0:
-                        flag_dict[container_name] = flag
-                        break;
+                        if result.exit_code == 0:
+                            flag_dict[container_name] = flag
+                            break;
 
                 if container_name.__contains__("target"):
 
@@ -409,7 +409,7 @@ def environmentView(request):
 
                     ns_process = subprocess.run(['gnome-terminal', '--', 'bash', '-c', command], stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
 
-        print(flag_dict)
+            print(flag_dict)
 
         end_time = time.time()
 
