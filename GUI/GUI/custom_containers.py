@@ -85,7 +85,7 @@ services:
 
 ek_containers_sect = f"""
   elasticsearch:
-    image: elasticsearch:7.17.2
+    image: elasticsearch:7.17.18
     environment:
       - discovery.type=single-node
     volumes:
@@ -102,7 +102,7 @@ ek_containers_sect = f"""
            cpus: '0.50'
            memory: 2g
   kibana:
-    image: kibana:7.17.2
+    image: kibana:7.17.18
     volumes:
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
@@ -128,7 +128,7 @@ ek_containers_sect = f"""
 
 filebeat_sect = f"""
   filebeat_setup:
-    image: docker.elastic.co/beats/filebeat:7.17.2
+    image: docker.elastic.co/beats/filebeat:7.17.18
     user: 0:0
     environment:
       - setup.kibana.host=172.28.0.11:5601
@@ -152,7 +152,7 @@ filebeat_sect = f"""
         condition: service_healthy
         
   filebeat:
-    image: docker.elastic.co/beats/filebeat:7.17.2
+    image: docker.elastic.co/beats/filebeat:7.17.18
     user: 0:0
     environment:
       - output.elasticsearch.hosts=['172.28.0.10:9200']
@@ -181,7 +181,7 @@ filebeat_sect = f"""
 
 packetbeat_sect = f"""        
   packetbeat_setup:
-    image: docker.elastic.co/beats/packetbeat:7.17.2
+    image: docker.elastic.co/beats/packetbeat:7.17.18
     environment:
       - setup.kibana.host=172.28.0.11:5601
       - output.elasticsearch.hosts=['172.28.0.10:9200']
@@ -206,7 +206,7 @@ packetbeat_sect = f"""
         condition: service_healthy
   
   packetbeat:
-    image: docker.elastic.co/beats/packetbeat:7.17.2
+    image: docker.elastic.co/beats/packetbeat:7.17.18
     user: packetbeat
     environment:
       - output.elasticsearch.hosts=['172.28.0.10:9200']
