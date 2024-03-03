@@ -23,35 +23,13 @@ class Container:
         self.capabilities = capabilities
         self.devices = devices
 
-
-httpd_container = Container("httpd", "dh157/goibhniu:httpd", ipv4_addr="172.29.0.11", volumes=['{}/Custom_Containers/httpd/httpd.conf:/usr/local/apache2/conf/httpd.conf:ro'.format(resource_files_dir), 
-    '{}/Custom_Containers/httpd/htdocs:/usr/local/apache2/htdocs/'.format(resource_files_dir),
-    "/etc/timezone:/etc/timezone:ro",
-    "/etc/localtime:/etc/localtime:ro"], capabilities=["NET_ADMIN","NET_RAW"])
-
-tomcat_container = Container("tomcat", "dh157/goibhniu:tomcat", ipv4_addr="172.28.0.17", svc_check="http://172.28.0.17:8080")
-
-
-dnsmasq_container = Container("dnsmasq", "dh157/goibhniu:dnsmasq", ipv4_addr="172.29.0.53", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"], capabilities=["NET_ADMIN","NET_RAW"])
-
-opensmtpd_container = Container("opensmtpd", "dh157/goibhniu:opensmtpd", ipv4_addr="172.29.0.25", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"], capabilities=["NET_ADMIN","NET_RAW"])
-
 random_traffic_container = Container("random_traffic", "dh157/goibhniu:traffic_generator", ipv4_addr="172.28.0.42", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"],command='172.28.0.18 "home;index;hello;wp-admin"')
 
 auto_attack_container = Container("auto_attack", "dh157/goibhniu:auto_attack", ipv4_addr="172.28.0.142", volumes=["/etc/timezone:/etc/timezone:ro","/etc/localtime:/etc/localtime:ro"],command='-target 172.28.0.11 -scanners "nmap;wpscan"')
 
-attackbox_container = Container("attackbox", "dh157/goibhniu:attackbox") 
-    
-custom_containers ={
-
-    "httpd":[httpd_container,True,[],[]],
-    "tomcat":[tomcat_container,False,["popen",'docker run -v /etc/timezone:/etc/timezone:ro -v /etc/localtime:/etc/localtime:ro --name tomcat --net uwe_tek_external --ip 172.28.0.17 -it dh157/goibhniu:tomcat'],["nohup bash /tomcat_to_stdout.sh &"]],
-
-}
+attackbox_container = Container("attackbox", "dh157/goibhniu:attackbox")
 
 aux_containers = {
-    "dnsmasq":[dnsmasq_container,True,[],[]],
-    "opensmtpd":[opensmtpd_container,True,[],[]],
     "random_traffic":[random_traffic_container,True,[],[]],
     "auto_attack":[auto_attack_container,True,[],[]]
 }
@@ -143,24 +121,24 @@ filebeat_sect = f"""
            memory: 1g
     command:
       - 'setup'
-      - '-E' 
-      - 'setup.kibana.host=172.28.0.11:5601' 
-      - '-E' 
+      - '-E'
+      - 'setup.kibana.host=172.28.0.11:5601'
+      - '-E'
       - 'output.elasticsearch.hosts=["172.28.0.10:9200"]'
     depends_on:
       kibana:
         condition: service_healthy
-        
+
   filebeat:
     image: docker.elastic.co/beats/filebeat:7.17.18
     user: 0:0
     environment:
       - output.elasticsearch.hosts=['172.28.0.10:9200']
     volumes:
-      - path_replace/Custom_Containers/required_containers/filebeat/filebeat.docker.yml:/usr/share/filebeat/filebeat.yml:ro 
+      - path_replace/Custom_Containers/required_containers/filebeat/filebeat.docker.yml:/usr/share/filebeat/filebeat.yml:ro
       - path_replace/Custom_Containers/required_containers/filebeat/filebeat_suricata.yml:/usr/share/filebeat/modules.d/suricata.yml:ro
       - path_replace/logfiles:/var/log/suricata/:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro 
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
@@ -179,7 +157,7 @@ filebeat_sect = f"""
         condition: service_completed_successfully
 """
 
-packetbeat_sect = f"""        
+packetbeat_sect = f"""
   packetbeat_setup:
     image: docker.elastic.co/beats/packetbeat:7.17.18
     environment:
@@ -197,14 +175,14 @@ packetbeat_sect = f"""
       - net_admin
     command:
       - 'setup'
-      - '-E' 
-      - 'setup.kibana.host=172.28.0.11:5601' 
-      - '-E' 
+      - '-E'
+      - 'setup.kibana.host=172.28.0.11:5601'
+      - '-E'
       - 'output.elasticsearch.hosts=["172.28.0.10:9200"]'
     depends_on:
       kibana:
         condition: service_healthy
-  
+
   packetbeat:
     image: docker.elastic.co/beats/packetbeat:7.17.18
     user: packetbeat
@@ -230,7 +208,7 @@ packetbeat_sect = f"""
       - 'output.elasticsearch.hosts=["172.28.0.10:9200"]'
     depends_on:
       packetbeat_setup:
-        condition: service_completed_successfully   
+        condition: service_completed_successfully
 """
 
 suricata_sect = f"""
@@ -277,7 +255,7 @@ auto_attack = f"""
       - '-target'
       - 'auto_attack_target'
       - '-scanners'
-      - 'selected_scanners' 
+      - 'selected_scanners'
 """
 
 traffic_generator = f"""
@@ -296,7 +274,7 @@ traffic_generator = f"""
            memory: 1g
     command:
       - 'traffic_target'
-      - 'endpoints' 
+      - 'endpoints'
 """
 
 tail_dc = f"""

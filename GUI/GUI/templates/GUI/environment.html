@@ -112,6 +112,10 @@ You can add aditional auxillary containers to your environment such as SMTPD, DN
                 <input type="checkbox" id="target_os" name="target_os" value="alpine" />
                 <label for="target_os">Alpine</label><br>
             <br>
+            <h5>Turn on port mirroing - Ports will be exposed via the localhost (externally accessible):</h5>
+                <input type="checkbox" id="port_mirroring" name="port_mirroring" value="on"/>
+                <label for="port_mirroring">On</label><br>
+            <br>
             <h5>Enable container escape (for the targetOS) via:</h5>
                 <input type="checkbox" id="mntd_volume" name="mntd_volume" value="true"/>
                 <label for="mntd_volume">Mounted Volume</label>
@@ -122,12 +126,12 @@ You can add aditional auxillary containers to your environment such as SMTPD, DN
                 <input type="checkbox" id="root_user" name="root_user" value="true"/>
                 <label for="root_user">Root user</label><br>
             <br>
-            <h5>Select the target OS - Defaults to the provided container:</h5>
+            <h5>Select the target container - Defaults to the provided targetos container:</h5>
             <select name="selected_target">
             {% for key, value in external_containers.items %}
                 <option value="{{ key }}">{{ key }}</option>
             {% endfor %}
-            <option selected value="default">Default</option>
+            <option selected value="target_1">Default</option>
             </select>
             </div>
             <br>

@@ -23,12 +23,8 @@ urlpatterns = [
     path('', home,name='home'),
     path('environment', environmentView,name='environment'),
     path('vulnhub', vulnhubView,name='vulnhub'),
-    path('custom', customView,name='custom'),
     path('readme/', readmeView, name='readme'),
     path('cvePage/', cveView, name='cvePage'),
-    path('customReadme/', customReadmeView, name='customReadme'),
     path('dockerfile/', dockerfileView, name='dockerfile'),
-    path('customDockerfile/', customDockerfileView, name='customDockerfile'),
-    path('dockerfileEditing/', dockerfileEditingView, name='dockerfileEditing')
 ]
 urlpatterns+=static(settings.MEDIA_URL,document_root=settings.MEDIA_ROOT)

