@@ -45,7 +45,7 @@ class scenario_template:
         self.targetos="targetos:172.28.0.200"
         self.attackbox="attackbox:172.28.0.157"
         self.current_external_ip = "172.28.0.11"
-        self.current_internal_ip = "172.29.0.11"
+        self.current_internal_ip = "172.29.0.101"
         self.number_of_internal_containers = 0
         self.aux_containers_env = dict()
         self.added_containers = dict()
@@ -199,9 +199,9 @@ def vulnhubView(request):
                         dcf_data = yaml.safe_load(dcf)
 
                     if len(list(dcf_data["services"].keys())) >= 2:
-                        cve_cwe_dict["Multiple Services"]["{} - {}".format(software, cve)] = "vulnhub/" + temp
+                        cve_cwe_dict["Multiple Services"]["{} - {}".format(software, dir)] = "vulnhub/" + temp
                     else:
-                       cve_cwe_dict["Single Services"]["{} - {}".format(software, cve)] = "vulnhub/" + temp
+                       cve_cwe_dict["Single Services"]["{} - {}".format(software, dir)] = "vulnhub/" + temp
 
         with open("{}/cve_cwe_mappings.json".format(resource_file_path), 'w') as fp:
             json.dump(cve_cwe_dict, fp)
@@ -406,8 +406,9 @@ def environmentView(request):
             pid_list = [current_scenario.tcpdump_process,current_scenario.listen_process_pid]
 
             for pid in pid_list:
-                p = psutil.Process(pid)
-                p.terminate()
+                if pid != 0:
+                    p = psutil.Process(pid)
+                    p.terminate()
 
             output_fldr = "{}output_files/{}".format(dir_path.split("GUI")[0],time.strftime("%d-%m-%Y_%H%M"))
 
