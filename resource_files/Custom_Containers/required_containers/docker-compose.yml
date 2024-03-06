@@ -1,0 +1,33 @@
+networks:
+  external:
+    external: true
+    name: uwe_tek_external
+  internal:
+    external: true
+    name: uwe_tek_internal
+services:
+  _redis_cve-2022-0543_redis:
+    image: vulhub/redis:5.0.7
+    networks:
+      external:
+        ipv4_address: 172.28.0.12
+    ports:
+    - 6379:6379
+  target:
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 1g
+    devices:
+    - /dev/input/event0
+    image: dh157/goibhniu:ubuntu
+    networks:
+      external:
+        ipv4_address: 172.28.0.200
+      internal:
+        ipv4_address: 172.29.0.200
+    volumes:
+    - /etc/timezone:/etc/timezone:ro
+    - /etc/localtime:/etc/localtime:ro
+version: '2.3'
