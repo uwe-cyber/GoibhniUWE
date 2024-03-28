@@ -42,6 +42,9 @@ header_dc = f"""
 version: '2.3'
 
 services:
+"""
+
+target_sect = f"""
   target:
     image: dh157/goibhniu:target_os
     devices:

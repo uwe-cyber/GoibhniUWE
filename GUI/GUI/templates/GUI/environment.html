@@ -77,6 +77,15 @@ You can add aditional auxillary containers to your environment such as SMTPD, DN
                     </select>
                 </label>
                 <br>
+                <h5>Select the target container - Defaults to the provided targetos container:</h5>
+                <select name="selected_target">
+                {% for container in target_containers %}
+                    <option value="{{ container }}">{{ container }}</option>
+                {% endfor %}
+                <option selected value="target_1">Default</option>
+                </select>
+                <br>
+                <br>
                 <button type="submit" class="btn btn-primary">Update</button>
             </form>
         </div>
@@ -126,15 +135,7 @@ You can add aditional auxillary containers to your environment such as SMTPD, DN
                 <input type="checkbox" id="root_user" name="root_user" value="true"/>
                 <label for="root_user">Root user</label><br>
             <br>
-            <h5>Select the target container - Defaults to the provided targetos container:</h5>
-            <select name="selected_target">
-            {% for key, value in external_containers.items %}
-                <option value="{{ key }}">{{ key }}</option>
-            {% endfor %}
-            <option selected value="target_1">Default</option>
-            </select>
             </div>
-            <br>
             <input type="hidden" name="deploy" id="deploy" value="deploy" >
             <button type="submit" class="btn btn-primary" onclick="submitForm()">Deploy!</button>
         </form>

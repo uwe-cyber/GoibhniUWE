@@ -1,5 +1,4 @@
-docker_testing/
 __pycache__/
-resource_files/Custom_Containers/required_containers/
-resource_files/vulnhub/
+resource_files/vulhub/
 output_files/
+GUI/static/

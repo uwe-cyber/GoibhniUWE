@@ -40,7 +40,7 @@ class scenario_template:
         self.name = name
         self.selected_vulns = []
         self.selected_vulns_child_containers = dict()
-        self.custom_vulnhub_containers = []
+        self.custom_vulhub_containers = []
         self.deployed_containers = []
         self.targetos="targetos:172.28.0.200"
         self.attackbox="attackbox:172.28.0.157"
@@ -52,6 +52,7 @@ class scenario_template:
         self.assigned_containers = dict()
         self.container_logs_to_recover = ["attackbox"]
         self.connected_containers = [(self.attackbox,self.targetos)]
+        self.graph_selected_target = ""
         self.container_nodes = []
         self.tcpdump_process_pid = 0
         self.listen_process_pid = 0
@@ -80,7 +81,7 @@ dir_path = os.path.dirname(os.path.realpath(__file__))
 
 resource_file_path = "{}resource_files".format(dir_path.split("GUI")[0])
 
-vulnhub_dir = "{}/vulnhub".format(resource_file_path.split("GUI")[0])
+vulhub_dir = "{}/vulhub".format(resource_file_path.split("GUI")[0])
 
 pcap_file = "capture_{}.pcap".format(time.strftime("%d%m%Y"))
 
@@ -96,23 +97,23 @@ def home(request):
     return render(request,'GUI/home.html')
 
 
-def vulnhubView(request):
+def vulhubView(request):
 
     git_url = "https://github.com/vulhub/vulhub.git"
 
     if request.method == "POST":
 
-        if not os.path.exists(vulnhub_dir):
-            os.mkdirs(vulnhub_dir)
+        if not os.path.exists(vulhub_dir):
+            os.mkdirs(vulhub_dir)
 
         try:
-            repo = git.Repo(vulnhub_dir)
+            repo = git.Repo(vulhub_dir)
             origin = repo.remote(name='origin')
             origin.fetch()
             origin_master = origin.refs.master
             repo.git.reset('--hard', origin_master.commit)
         except git.InvalidGitRepositoryError:
-            git.Repo.clone_from(git_url, vulnhub_dir)
+            git.Repo.clone_from(git_url, vulhub_dir)
 
         os.remove("{}/cve_cwe_mappings.json".format(resource_file_path))
 
@@ -148,7 +149,7 @@ def vulnhubView(request):
         for i in cwe_json:
             cwe_dict[i["id"]] = i
 
-        for root, dirs, files in os.walk(vulnhub_dir):
+        for root, dirs, files in os.walk(vulhub_dir):
             for dir in dirs:
                 match = re.search(r"CVE[-]\d*[-]\d*", dir)
                 current_dir = os.path.join(root, dir)
@@ -156,7 +157,7 @@ def vulnhubView(request):
                 dcf_file = any(f == ("docker-compose.yml") for f in os.listdir(current_dir))
 
                 vuln_dir_path = os.path.join(root,dir).replace("//","/")
-                temp = vuln_dir_path.split("vulnhub/")[1]
+                temp = vuln_dir_path.split("vulhub/")[1]
                 software = temp.split("/")[0]
 
                 if match:
@@ -176,16 +177,16 @@ def vulnhubView(request):
                     if cwe_id not in cve_cwe_dict:
                         cve_cwe_dict[cwe_id] = dict()
 
-                    cve_cwe_dict[cwe_id]["{} - {}".format(software, cve)] = "vulnhub/" + temp
+                    cve_cwe_dict[cwe_id]["{} - {}".format(software, cve)] = "vulhub/" + temp
 
                     if dcf_file:
                         with open("{}/docker-compose.yml".format(current_dir)) as dcf:
                             dcf_data = yaml.safe_load(dcf)
 
                         if len(list(dcf_data["services"].keys())) >= 2:
-                            cve_cwe_dict["Multiple Services"]["{} - {}".format(software, cve)] = "vulnhub/" + temp
+                            cve_cwe_dict["Multiple Services"]["{} - {}".format(software, cve)] = "vulhub/" + temp
                         else:
-                            cve_cwe_dict["Single Services"]["{} - {}".format(software, cve)] = "vulnhub/" + temp
+                            cve_cwe_dict["Single Services"]["{} - {}".format(software, cve)] = "vulhub/" + temp
 
                 elif dcf_file:
                     cwe_id = "Misc"
@@ -193,15 +194,15 @@ def vulnhubView(request):
                     if cwe_id not in cve_cwe_dict:
                         cve_cwe_dict[cwe_id] = dict()
 
-                    cve_cwe_dict[cwe_id]["{} - {}".format(software, dir)] = "vulnhub/" + temp
+                    cve_cwe_dict[cwe_id]["{} - {}".format(software, dir)] = "vulhub/" + temp
 
                     with open("{}/docker-compose.yml".format(current_dir)) as dcf:
                         dcf_data = yaml.safe_load(dcf)
 
                     if len(list(dcf_data["services"].keys())) >= 2:
-                        cve_cwe_dict["Multiple Services"]["{} - {}".format(software, dir)] = "vulnhub/" + temp
+                        cve_cwe_dict["Multiple Services"]["{} - {}".format(software, dir)] = "vulhub/" + temp
                     else:
-                       cve_cwe_dict["Single Services"]["{} - {}".format(software, dir)] = "vulnhub/" + temp
+                       cve_cwe_dict["Single Services"]["{} - {}".format(software, dir)] = "vulhub/" + temp
 
         with open("{}/cve_cwe_mappings.json".format(resource_file_path), 'w') as fp:
             json.dump(cve_cwe_dict, fp)
@@ -210,7 +211,7 @@ def vulnhubView(request):
         'vulnerabilities':collections.OrderedDict(sorted(cve_cwe_dict.items()))
     }
 
-    return render(request,'GUI/vulnhub.html',context)
+    return render(request,'GUI/vulhub.html',context)
 
 
 def environmentView(request):
@@ -220,14 +221,17 @@ def environmentView(request):
     global suricata_set
     global deployed
 
+    potential_target_containers = []
+
+    # Default definition to avoid use before assignment errors
+    selected_target = "target_1"
+
     if len(current_scenario.aux_containers_env) == 0:
         for key in aux_containers:
             current_scenario.aux_containers_env[key] = "Avaliable"
 
-    #if len(current_scenario.added_containers) == 0:
-
     for container in current_scenario.selected_vulns:
-        container_vlun = container.split("vulnhub")[1]
+        container_vlun = container.split("vulhub")[1]
         current_scenario.added_containers[container_vlun]="External"
 
         dcf_data = yaml_data_from_docker_compose(container_vlun)[0]
@@ -236,6 +240,11 @@ def environmentView(request):
             current_scenario.selected_vulns_child_containers[service] = container_vlun
 
     if request.method == "POST":
+
+        if "selected_target" in request.POST:
+            selected_target = request.POST["selected_target"].replace("/","_").lower()
+
+            selected_target_raw = request.POST["selected_target"]
 
         start_time = time.time()
 
@@ -247,8 +256,6 @@ def environmentView(request):
             auto_attack_target = request.POST["auto_attack_target"]
 
             target_os = request.POST["target_os"]
-
-            selected_target = request.POST["selected_target"].replace("/","_").lower()
 
             filebeats = False
             packetbeats = False
@@ -273,7 +280,10 @@ def environmentView(request):
             if "port_mirroring" in request.POST:
                 port_mirroring = True
 
-            dynamic_containers_sect = header_dc.replace("target_os",target_os)
+            dynamic_containers_sect = header_dc
+
+            if current_scenario.graph_selected_target == "target_1":
+                dynamic_containers_sect += target_sect.replace("target_os",target_os)
 
             if "mntd_volume" in request.POST:
                 dynamic_containers_sect += f"""
@@ -314,7 +324,7 @@ def environmentView(request):
 
                 addrs = psutil.net_if_addrs()
 
-                suricata_interface = get_uwe_net_interface('172.28.0.1')
+                suricata_interface = get_uwe_net_interface('1f72.28.0.1')
 
                 dynamic_containers_sect += suricata_sect.replace("network_interface", suricata_interface)
                 suricata_set = True
@@ -464,20 +474,42 @@ def environmentView(request):
 
     selected_auxillary_containers=collections.OrderedDict(sorted({k: v for k,v in current_scenario.aux_containers_env.items() if v == "Selected"}.items()))
 
+    # Getting rid of duplicate nodes - Cleanup
+
+    current_scenario.connected_containers = []
+
+    if current_scenario.targetos in current_scenario.container_nodes:
+        current_scenario.container_nodes.remove(current_scenario.targetos)
+
+    if selected_target != "target_1":
+        child_containers = [k for k,v in current_scenario.selected_vulns_child_containers.items() if v == selected_target_raw]
+
+        child_container_service = child_containers[0].split('_')[-1]
+
+        current_scenario.graph_selected_target = f"{selected_target_raw} - {child_container_service}"
 
     if current_scenario.number_of_internal_containers >= 1:
-        # Getting both external and internal instances of targetos in nodes - Cleanup
-        if current_scenario.targetos in current_scenario.container_nodes:
-            current_scenario.container_nodes.remove(current_scenario.targetos)
 
-        current_scenario.targetos="targetos:172.28.0.200/172.29.0.200"
+        if selected_target == "target_1":
+            current_scenario.targetos="targetos:172.28.0.200/172.29.0.200"
+
+        else:
+            current_scenario.targetos=f"{current_scenario.graph_selected_target}:172.28.0.200/172.29.0.200"
+            current_scenario.assigned_containers[current_scenario.graph_selected_target] = "172.28.0.200/172.29.0.200"
+
         current_scenario.connected_containers.append((current_scenario.attackbox,current_scenario.targetos))
 
     else:
         if current_scenario.targetos in current_scenario.container_nodes:
             current_scenario.container_nodes.remove(current_scenario.targetos)
 
-        current_scenario.targetos="targetos:172.28.0.200"
+        if selected_target == "target_1":
+            current_scenario.targetos="targetos:172.28.0.200"
+
+        else:
+            current_scenario.targetos=f"{current_scenario.graph_selected_target}:172.28.0.200",
+            current_scenario.assigned_containers[current_scenario.graph_selected_target] = "172.28.0.200"
+
         current_scenario.connected_containers.append((current_scenario.attackbox,current_scenario.targetos))
 
     previous_container = ""
@@ -488,7 +520,8 @@ def environmentView(request):
             child_containers = [k for k,v in current_scenario.selected_vulns_child_containers.items() if v == container]
 
             for child_container in child_containers:
-                graph_container = "{} - {}".format(container, child_container)
+                child_container_service = child_container.split('_')[-1]
+                graph_container = "{} - {}".format(container, child_container_service)
                 container_ip_str = container_to_graph(current_scenario, graph_container, "172.29.0.0/24")
 
         else:
@@ -501,13 +534,25 @@ def environmentView(request):
 
     previous_container = ""
 
+    with open("{}/cve_cwe_mappings.json".format(resource_file_path), 'r') as fp:
+        cve_cwe_dict = json.load(fp)
+
+    single_service_containers = cve_cwe_dict["Single Services"].values()
+
     for container in external_containers:
+
+        if f"vulhub{container}" in single_service_containers:
+            potential_target_containers.append(container)
+
         if container in current_scenario.selected_vulns_child_containers.values():
             child_containers = [k for k,v in current_scenario.selected_vulns_child_containers.items() if v == container]
 
             for child_container in child_containers:
-                graph_container = "{} - {}".format(container, child_container)
-                container_ip_str = container_to_graph(current_scenario, graph_container, "172.28.0.0/24")
+                child_container_service = child_container.split('_')[-1]
+                graph_container = "{} - {}".format(container, child_container_service)
+
+                if graph_container != current_scenario.graph_selected_target:
+                    container_ip_str = container_to_graph(current_scenario, graph_container, "172.28.0.0/24")
 
         else:
             container_ip_str = container_to_graph(current_scenario, container, "172.28.0.0/24")
@@ -517,52 +562,23 @@ def environmentView(request):
 
         previous_container = container_ip_str
 
-    tuples_to_remove = []
-
-    # Tidy up changes to container arrangement
-    for tuple_item in current_scenario.connected_containers:
-        remove_tuple = False
-        for container in tuple_item:
-            if container not in current_scenario.container_nodes:
-                current_scenario.container_nodes.append(container)
-
-            container_key_value = ""
-            if re.match(r"[/]\w*[/]",container):
-                container_key_value = container.split(" ")[0]
-            else:
+        # Tidy up changes to container arrangement
+        tuples_to_remove = []
+        for tuple_item in current_scenario.connected_containers:
+            remove_tuple = False
+            for container in tuple_item:
                 container_key_value = container.split(":")[0]
+                container_ip_value = container.split(":")[1]
 
-            container_ip_value = container.split(":")[1]
-
-            if container_key_value in avaliable_auxillary_containers.keys():
-                current_scenario.container_nodes.remove(container)
-                remove_tuple = True
-
-            if container_key_value in external_containers.keys():
-                if container_ip_value.__contains__("172.29"):
-                    current_scenario.container_nodes.remove(container)
+                if container_key_value == current_scenario.graph_selected_target and container_ip_value != "172.28.0.200/172.29.0.200":
+                    #current_scenario.container_nodes.remove(container)
                     remove_tuple = True
 
-            if container_key_value in internal_containers.keys():
-                if container_ip_value.__contains__("172.28"):
-                    current_scenario.container_nodes.remove(container)
-                    remove_tuple = True
+            if remove_tuple:
+                tuples_to_remove.append(tuple_item)
 
-            if current_scenario.number_of_internal_containers >= 1:
-                if container_key_value == "targetos" and container_ip_value == "172.28.0.200":
-                    current_scenario.container_nodes.remove(container)
-                    remove_tuple = True
-
-            if current_scenario.number_of_internal_containers == 0:
-                if container_key_value == "targetos" and container_ip_value == "172.28.0.200/172.29.0.200":
-                    current_scenario.container_nodes.remove(container)
-                    remove_tuple = True
-
-        if remove_tuple:
-            tuples_to_remove.append(tuple_item)
-
-    for tuple_item in tuples_to_remove:
-        current_scenario.connected_containers.remove(tuple_item)
+        for tuple_item in tuples_to_remove:
+            current_scenario.connected_containers.remove(tuple_item)
 
     graph = create_Network_Graph(current_scenario.connected_containers,current_scenario.container_nodes)
 
@@ -576,6 +592,7 @@ def environmentView(request):
     context = {
         'external_containers':external_containers,
         'internal_containers':internal_containers,
+        'target_containers': potential_target_containers,
         'avaliable_auxillary_containers':avaliable_auxillary_containers,
         'selected_auxillary_containers':selected_auxillary_containers,
         'graph':graph,
@@ -643,7 +660,7 @@ def cveView(request):
         vulns_to_remove = request.POST.getlist("remove_vuln")
 
         for vuln in vulns_to_remove:
-            current_scenario.selected_vulns.remove("vulnhub{}".format(vuln))
+            current_scenario.selected_vulns.remove("vulhub{}".format(vuln))
 
     if "selected_vuln" in request.POST:
 
@@ -653,7 +670,7 @@ def cveView(request):
     pp_selected_vulns = []
 
     for vuln in current_scenario.selected_vulns:
-        pp_selected_vulns.append(vuln.split("vulnhub")[1])
+        pp_selected_vulns.append(vuln.split("vulhub")[1])
 
 
     sorted_keys = sorted(selected_cves.keys())
@@ -815,6 +832,9 @@ def deploy_containers(scenario, required_networks, dynamic_containers_sect, pcap
 
             dcf_data["services"].pop("target")
 
+        if dcf_data["services"] is None:
+            dcf_data["services"] = {}
+
         dcf_data["services"][service] = custom_dc_services[service]
 
     for service in dcf_data["services"]:
@@ -851,27 +871,14 @@ def deploy_containers(scenario, required_networks, dynamic_containers_sect, pcap
 
     if pcap:
 
-        if user_defined:
+        capture_output = "{}/{}".format(resource_file_path,pcap_file)
 
-            capture_output = "{}/{}_{}".format(resource_file_path,scenario.name,pcap_file)
+        os.umask(0)
 
-            os.umask(0)
+        if not os.path.exists(capture_output):
+            os.mknod(capture_output, mode = 0o666)
 
-            if not os.path.exists(capture_output):
-                os.mknod(capture_output, mode = 0o666)
-
-            tcpdump_process = subprocess.Popen(['tcpdump', '-i', 'any', '-w', capture_output, 'src', 'net', '{}.0.0/15'.format(replace_subnet_dict["uwe_tek_external_usd"]), 'and', 'dst', 'net', '{}.0.0/15'.format(replace_subnet_dict["uwe_tek_external_usd"])],stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
-
-        else:
-
-            capture_output = "{}/{}".format(resource_file_path,pcap_file)
-
-            os.umask(0)
-
-            if not os.path.exists(capture_output):
-                os.mknod(capture_output, mode = 0o666)
-
-            tcpdump_process = subprocess.Popen(['tcpdump', '-i', 'any', '-w', capture_output, 'src', 'net', '172.28.0.0/15', 'and', 'dst', 'net', '172.28.0.0/15'],stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
+        tcpdump_process = subprocess.Popen(['tcpdump', '-i', 'any', '-w', capture_output, 'src', 'net', '172.28.0.0/15', 'and', 'dst', 'net', '172.28.0.0/15'],stderr=subprocess.STDOUT, stdout=subprocess.PIPE)
 
         scenario.tcpdump_process = tcpdump_process.pid
 
@@ -890,7 +897,10 @@ def docker_compose_container_setup(scenario,container, port_mirroring):
 
     for service in dcf_data["services"]:
 
-        temp = "{} - {}".format(container,service)
+        child_container_service = service.split('_')[-1]
+
+        temp = "{} - {}".format(container,child_container_service)
+
 
         scenario.deployed_containers.append(container)
 
@@ -900,18 +910,33 @@ def docker_compose_container_setup(scenario,container, port_mirroring):
 
             network_interface = ""
 
-            if ipv4_addr.__contains__('172.29'):
-                network_interface = "internal"
+            if ipv4_addr.__contains__('/172.29'):
+
+                external_ipv4_addr = ipv4_addr.split("/")[0]
+
+                internal_ipv4_addr = ipv4_addr.split("/")[1]
+
+                dcf_data["networks"] = {"external":{"name":"uwe_tek_external", "external": "true"}}
+                dcf_data["networks"] = {"external":{"name":"uwe_tek_internal", "external": "true"}}
+
+                dcf_data["services"][service]["networks"] = {"external":{"ipv4_address":external_ipv4_addr}, "internal":{"ipv4_address":internal_ipv4_addr}}
 
             else:
-                network_interface = "external"
+                if ipv4_addr.__contains__('172.29'):
+                    network_interface = "internal"
+                else:
+                    network_interface = "external"
 
-            dcf_data["services"][service]["networks"] = {network_interface:{"ipv4_address":ipv4_addr}}
+                dcf_data["networks"] = {"external":{"name":f"uwe_tek_{network_interface}", "external": "true"}}
 
-            dcf_data["networks"] = {"external":{"name":"uwe_tek_external", "external": "true"}}
+                dcf_data["services"][service]["networks"] = {network_interface:{"ipv4_address":ipv4_addr}}
 
         else:
-            ipv4_addr = dcf_data["services"][service]["networks"]["external"]["ipv4_address"]
+            if ipv4_addr.__contains__('/172.29'):
+                dcf_data["services"][service]["networks"] = {"external":{"ipv4_address":external_ipv4_addr}}
+                dcf_data["services"][service]["networks"] = {"internal":{"ipv4_address":internal_ipv4_addr}}
+            else:
+                ipv4_addr = dcf_data["services"][service]["networks"]["external"]["ipv4_address"]
 
         running_container_info += "{} is up and running and can be accessed on {}\n".format(temp,ipv4_addr)
 
@@ -967,8 +992,6 @@ def docker_compose_container_setup(scenario,container, port_mirroring):
 
 def custom_container_setup(Container, use_sdk, subprocess_list=[], on_running_cmds=[]):
     network_list = api_client.networks()
-
-    print(f"Container Setup : {Container.name}")
 
     if container_check(Container.name) != "running":
 
@@ -1048,21 +1071,21 @@ def yaml_data_from_docker_compose(container):
 
     files = ""
 
-    if os.path.isdir("{}{}".format(vulnhub_dir,container)):
+    if os.path.isdir("{}{}".format(vulhub_dir,container)):
 
-        files = os.listdir("{}{}".format(vulnhub_dir,container))
-
-        for f in files:
-            if f.lower().__contains__("compose"):
-                docker_compose_file = "{}/{}/{}".format(vulnhub_dir,container,f)
-
-    if os.path.isdir("{}/Custom_Containers/custom_vulnhub_containers/{}".format(resource_file_path,container)):
-
-        files = os.listdir("{}/Custom_Containers/custom_vulnhub_containers/{}".format(resource_file_path,container))
+        files = os.listdir("{}{}".format(vulhub_dir,container))
 
         for f in files:
             if f.lower().__contains__("compose"):
-                docker_compose_file = "{}/Custom_Containers/custom_vulnhub_containers/{}/{}".format(resource_file_path,container,f)
+                docker_compose_file = "{}/{}/{}".format(vulhub_dir,container,f)
+
+    if os.path.isdir("{}/Custom_Containers/custom_vulhub_containers/{}".format(resource_file_path,container)):
+
+        files = os.listdir("{}/Custom_Containers/custom_vulhub_containers/{}".format(resource_file_path,container))
+
+        for f in files:
+            if f.lower().__contains__("compose"):
+                docker_compose_file = "{}/Custom_Containers/custom_vulhub_containers/{}/{}".format(resource_file_path,container,f)
 
 
     with open(docker_compose_file) as dcf:
@@ -1075,14 +1098,14 @@ def yaml_data_from_docker_compose(container):
     dcf_data["services"] = {f"{suffix}_{key}": value for key, value in dcf_data['services'].items()}
 
     for service in dcf_data["services"]:
-        if "environment" in dcf_data["services"][service]:
-            for idx in range(len(dcf_data["services"][service]["environment"])):
-                item_pair = dcf_data["services"][service]["environment"][idx]
-                env_var = item_pair.split("=")[0]
-                value = item_pair.split("=")[1]
-                if env_var.__contains__("HOST") and value in original_service_names:
-                    dcf_data["services"][service]["environment"][idx] = f"{env_var}={suffix}_{value}"
-            print(dcf_data["services"][service]["environment"])
+        # if "environment" in dcf_data["services"][service]:
+        #     for idx in range(len(dcf_data["services"][service]["environment"])):
+        #         item_pair = dcf_data["services"][service]["environment"][idx]
+        #         env_var = item_pair.split("=")[0]
+        #         value = item_pair.split("=")[1]
+        #         if env_var.__contains__("HOST") and value in original_service_names:
+        #             dcf_data["services"][service]["environment"][idx] = f"{env_var}={suffix}_{value}"
+        #     print(dcf_data["services"][service]["environment"])
         if "depends_on" in dcf_data["services"][service]:
             if type(dcf_data["services"][service]["depends_on"]) is list:
                 for idx in range(len(dcf_data["services"][service]["depends_on"])):

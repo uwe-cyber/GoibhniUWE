@@ -22,7 +22,7 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('', home,name='home'),
     path('environment', environmentView,name='environment'),
-    path('vulnhub', vulnhubView,name='vulnhub'),
+    path('vulhub', vulhubView,name='vulhub'),
     path('readme/', readmeView, name='readme'),
     path('cvePage/', cveView, name='cvePage'),
     path('dockerfile/', dockerfileView, name='dockerfile'),
