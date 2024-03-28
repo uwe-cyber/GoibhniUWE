@@ -1,4 +1,6 @@
 __pycache__/
 resource_files/vulhub/
+resource_files/logfiles
+exploit_material
 output_files/
 GUI/static/
