@@ -104,7 +104,7 @@ def vulhubView(request):
     if request.method == "POST":
 
         if not os.path.exists(vulhub_dir):
-            os.mkdirs(vulhub_dir)
+            os.makedirs(vulhub_dir)
 
         try:
             repo = git.Repo(vulhub_dir)
